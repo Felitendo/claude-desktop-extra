@@ -1,6 +1,6 @@
 # Custom models
 
-Use models from other providers in the Code tab, next to Anthropic's. Any endpoint that speaks the Anthropic Messages API works: DeepSeek, Kimi, GLM, MiniMax, Qwen, OpenRouter, a gateway such as LiteLLM, or Anthropic's own API on your API credit. A session on a custom model talks to that provider with your key. Everything else stays on your subscription.
+Use models from other providers in the Code tab, next to Anthropic's. Any endpoint that speaks the Anthropic Messages API works: DeepSeek, Kimi, GLM, MiniMax, Qwen, OpenRouter, Opper, a gateway such as LiteLLM, or Anthropic's own API on your API credit. A session on a custom model talks to that provider with your key. Everything else stays on your subscription.
 
 This is not [third-party inference](third-party-inference.md), which replaces the subscription with a single gateway. Here the login, the Chat tab and the Claude models stay as they are.
 

@@ -23,6 +23,12 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   for Anthropic's API, which uses it.
 - Neither is a credential: both stay when a provider's base URL moves to another host.
 
+### Custom models: Opper preset
+
+- **Add a provider** offers **Opper (EU)**: the EU-resident gateway host `https://eu.gw.opper.ai`, with
+  **Fetch models** reading its model list. The presets are now sorted alphabetically, the hand-filled
+  gateway entry last.
+
 ## 2026-10-10
 
 ### Custom models in the Code picker (new community feature, thanks @hexadecimil, #270)

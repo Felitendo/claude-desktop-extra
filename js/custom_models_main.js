@@ -1500,30 +1500,40 @@
     // Model ids are NOT listed here - they age in months; "fetch models" on
     // the card asks the provider. Endpoints as documented for Claude Code
     // (ANTHROPIC_BASE_URL) by the vendors, 2026-09; DeepSeek's verified.
-    // DeepSeek: 1M context on every model, one price whatever the length.
-    { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic",
-      modelsUrl: "https://api.deepseek.com/v1/models", keyHint: "sk-... from platform.deepseek.com",
-      effort: ["low", "high", "max"], context: "1m" },
-    { id: "kimi", label: "Kimi (Moonshot, international)", baseUrl: "https://api.moonshot.ai/anthropic",
-      modelsUrl: "https://api.moonshot.ai/v1/models", keyHint: "sk-... from platform.moonshot.ai" },
-    { id: "glm", label: "GLM (Z.ai, international)", baseUrl: "https://api.z.ai/api/anthropic",
-      keyHint: "from z.ai" },
-    { id: "glm-cn", label: "GLM (Zhipu, China)", baseUrl: "https://open.bigmodel.cn/api/anthropic",
-      keyHint: "from open.bigmodel.cn" },
-    { id: "minimax", label: "MiniMax (international)", baseUrl: "https://api.minimax.io/anthropic",
-      keyHint: "from platform.minimax.io" },
-    { id: "qwen", label: "Qwen (DashScope)", baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic",
-      modelsUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/models", keyHint: "sk-... from DashScope" },
-    // OpenRouter: one key, hundreds of models (Qwen, GLM, DeepSeek, Kimi, the
-    // Claude models...), Anthropic-compatible /v1/messages, public /v1/models
-    // that carries each model's context length.
-    { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api",
-      modelsUrl: "https://openrouter.ai/api/v1/models", keyHint: "sk-or-... from openrouter.ai/keys" },
     // Anthropic's own API, on your API credit: the Claude models listed next
     // to the subscription's under claude-anthropic-<model>, the CLI's
     // requests forwarded as they are (prompt caching kept).
     { id: "anthropic", label: "Anthropic API (your API credit)", baseUrl: "https://api.anthropic.com",
       modelsUrl: "https://api.anthropic.com/v1/models", keyHint: "sk-ant-api... from platform.claude.com" },
+    // DeepSeek: 1M context on every model, one price whatever the length.
+    { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic",
+      modelsUrl: "https://api.deepseek.com/v1/models", keyHint: "sk-... from platform.deepseek.com",
+      effort: ["low", "high", "max"], context: "1m" },
+    { id: "glm", label: "GLM (Z.ai, international)", baseUrl: "https://api.z.ai/api/anthropic",
+      keyHint: "from z.ai" },
+    { id: "glm-cn", label: "GLM (Zhipu, China)", baseUrl: "https://open.bigmodel.cn/api/anthropic",
+      keyHint: "from open.bigmodel.cn" },
+    { id: "kimi", label: "Kimi (Moonshot, international)", baseUrl: "https://api.moonshot.ai/anthropic",
+      modelsUrl: "https://api.moonshot.ai/v1/models", keyHint: "sk-... from platform.moonshot.ai" },
+    { id: "minimax", label: "MiniMax (international)", baseUrl: "https://api.minimax.io/anthropic",
+      keyHint: "from platform.minimax.io" },
+    // OpenRouter: one key, hundreds of models (Qwen, GLM, DeepSeek, Kimi, the
+    // Claude models...), Anthropic-compatible /v1/messages, public /v1/models
+    // that carries each model's context length.
+    { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api",
+      modelsUrl: "https://openrouter.ai/api/v1/models", keyHint: "sk-or-... from openrouter.ai/keys" },
+    // Opper: one gateway (backend in Stockholm) in front of hundreds of
+    // models, addressed as provider/model - the provider prefix decides where
+    // inference runs (EU or US routes). eu.gw.opper.ai is the EU-resident
+    // host (TLS ends in Stockholm); gw.opper.ai is the global edge to the
+    // same backend, same key and models. Its public /v1/models answers
+    // {models: [{id, name, context_window}]}. Context and effort vary per
+    // route, so neither is set here. Verified 2026-10.
+    { id: "opper", label: "Opper (EU)", baseUrl: "https://eu.gw.opper.ai",
+      modelsUrl: "https://eu.gw.opper.ai/v1/models", keyHint: "from platform.opper.ai/settings/api-keys" },
+    { id: "qwen", label: "Qwen (DashScope)", baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic",
+      modelsUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/models", keyHint: "sk-... from DashScope" },
+    // The catch-all stays last, after the named providers (alphabetical).
     { id: "gateway", label: "Anthropic-compatible gateway (LiteLLM...)", baseUrl: "",
       keyHint: "the gateway's key" }
   ];

@@ -496,7 +496,7 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
   switchOn(dir);
   const { h, sandbox, api } = load(dir);
   let r = await h["cdb-cm:config-read"](okSenderEv);
-  ok(r.ok === true && r.configured === false && r.providers.length === 0 && Array.isArray(r.presets) && r.presets[0].id === "deepseek",
+  ok(r.ok === true && r.configured === false && r.providers.length === 0 && Array.isArray(r.presets) && r.presets[0].id === "anthropic",
      "config-read on an empty profile: nothing configured, presets offered");
   ok(r.paths.secrets === join(dir, "custom-models", "secrets.json"), "config-read names the secrets file");
 
@@ -514,6 +514,12 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
      "the preset is kept on the provider and gives it its effort levels");
   ok(r.presets.some((x) => x.id === "kimi") && r.presets.some((x) => x.id === "glm") && !r.presets.some((x) => Array.isArray(x.models)),
      "presets know endpoints, not model lists");
+  const named = r.presets.filter((x) => x.id !== "gateway").map((x) => x.label.toLowerCase());
+  ok(named.join("|") === named.slice().sort().join("|") && r.presets[r.presets.length - 1].id === "gateway",
+     "presets are alphabetical by label, the hand-filled gateway last: " + named.join(", "));
+  const opper = r.presets.find((x) => x.id === "opper");
+  ok(opper && opper.baseUrl === "https://eu.gw.opper.ai" && opper.modelsUrl === "https://eu.gw.opper.ai/v1/models",
+     "the Opper preset: EU gateway, its model list on the same host");
   ok(r.webSearch === "" && r.webSearchLocked === false, "web search defaults to Anthropic");
   ok(r.configured === false && r.providers[0].models.length === 0, "a provider without a model is listed but not usable");
   const json = JSON.parse(readFileSync(join(dir, "claude-desktop-extra.json"), "utf8"));
