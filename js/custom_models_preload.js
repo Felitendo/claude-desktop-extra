@@ -370,8 +370,13 @@
     if (typeof out.max_tokens === "number" && out.max_tokens < MIN_MAX_TOKENS) out.max_tokens = MIN_MAX_TOKENS;
     if (typeof body.system === "string") out.system = body.system;
     else if (Array.isArray(body.system)) {
-      var sys = body.system.filter(function (b) { return b && b.type === "text" && typeof b.text === "string"; })
-        .map(function (b) { return textBlock(b.text); });
+      // stripBillingHeader: the CLI's billing line (its own block, first,
+      // naming cc_entrypoint=claude-desktop) is Anthropic's metadata - another
+      // provider has no use for it.
+      var sys = body.system.filter(function (b) {
+        return b && b.type === "text" && typeof b.text === "string" &&
+          !(p.stripBillingHeader === true && b.text.indexOf("x-anthropic-billing-header:") === 0);
+      }).map(function (b) { return textBlock(b.text); });
       if (sys.length) out.system = sys;
     }
     out.messages = cleanMessages(body.messages, m, opts.stripThinking);
@@ -444,6 +449,16 @@
         catch (e) { warnHeader(p.id, k); }
       });
     }
+    return withUserAgent(h, p);
+  }
+  // The provider's User-Agent, over the runtime's (Bun/x.y.z here), the CLI's
+  // (claude-cli/... (external, claude-desktop...) on the native path) and any
+  // user-agent in its headers. Absent: whatever was there goes, as before.
+  function withUserAgent(h, p) {
+    if (typeof p.userAgent === "string" && p.userAgent) {
+      try { h.set("user-agent", p.userAgent); }
+      catch (e) { warnHeader(p.id, "user-agent"); }
+    }
     return h;
   }
 
@@ -495,7 +510,7 @@
         catch (e) { warnHeader(p.id, k); }
       });
     }
-    return h;
+    return withUserAgent(h, p);
   }
 
   var warnedHeaders = Object.create(null);

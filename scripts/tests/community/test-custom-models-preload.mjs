@@ -335,6 +335,35 @@ const ANTHROPIC = "https://api.anthropic.com/v1/messages";
   ok(c2.length === 1 && r2.status === 400 && /redirected to another host/.test(j2.error.message), "a redirect to another host is not followed: the key stays home");
 }
 
+// --- per-provider User-Agent; the billing line, dropped on request -------------------
+{
+  const BILLING = "x-anthropic-billing-header: cc_version=2.1.295.f0b; cc_entrypoint=claude-desktop; cch=31d55;";
+  const sys = [{ type: "text", text: BILLING }, { type: "text", text: "You are a Claude agent." }];
+  const cfg = JSON.parse(JSON.stringify(CONFIG));
+  cfg.providers[0].userAgent = "MyAgent/1.0";
+  cfg.providers[0].headers = { "User-Agent": "from-headers/0", "x-extra": "1" };
+  cfg.providers[0].stripBillingHeader = true;
+  const { hooked, calls } = load(cfg);
+  await hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, system: sys, messages: [{ role: "user", content: "x" }] }));
+  const hd = calls[0].init.headers, out = JSON.parse(calls[0].init.body);
+  ok(hd.get("user-agent") === "MyAgent/1.0", "userAgent is the request's User-Agent, over one in headers: " + hd.get("user-agent"));
+  ok(hd.get("x-extra") === "1", "the provider's other headers still go");
+  ok(out.system.length === 1 && out.system[0].text === "You are a Claude agent.",
+     "stripBillingHeader drops the billing line and keeps the rest of the system prompt: " + JSON.stringify(out.system));
+  const { hooked: h2, calls: c2 } = load(CONFIG);
+  await h2(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, system: sys, messages: [{ role: "user", content: "x" }] }));
+  ok(!c2[0].init.headers.has("user-agent"), "without userAgent none is set: the runtime's own goes, as before");
+  ok(JSON.parse(c2[0].init.body).system[0].text === BILLING, "without stripBillingHeader the billing line is sent, as before");
+  // Anthropic's API: the User-Agent replaces the CLI's; the billing line stays (rewritten to cli) whatever the routes say.
+  const native = { providers: [{ id: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-ant-api-1234567890", native: true,
+    userAgent: "MyAgent/1.0", stripBillingHeader: true, models: [{ id: "claude-opus-5-5", alias: "claude-anthropic-opus-5-5" }] }] };
+  const { hooked: hn, calls: cn } = load(native);
+  await hn("https://api.anthropic.com/v1/messages?beta=true", messagesInit({ model: "claude-anthropic-opus-5-5", max_tokens: 100, system: sys,
+    messages: [{ role: "user", content: "x" }] }, { headers: { "content-type": "application/json", "user-agent": "claude-cli/2.1.295 (external, claude-desktop)" } }));
+  ok(new Headers(cn[0].init.headers).get("user-agent") === "MyAgent/1.0", "a native provider's userAgent replaces the CLI's");
+  ok(/cc_entrypoint=cli;/.test(JSON.parse(cn[0].init.body).system[0].text), "a native request keeps its billing line: Anthropic uses it");
+}
+
 // --- the keys live in routes.json, not in the environment ------------------------------
 {
   const dir = mkdtempSync(join(tmpdir(), "cdb-cm-keys-"));

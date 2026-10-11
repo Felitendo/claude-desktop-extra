@@ -164,6 +164,10 @@
   // shadow one gets the provider id appended.
   var AGENT_NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
   var HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  // A provider's User-Agent: printable ASCII only - fetch refuses a header
+  // value with a line break or a character above 0xFF, and every request to
+  // the provider would then fail as a network error.
+  var USER_AGENT_RE = /^[\x20-\x7e]{1,300}$/;
   var RESERVED_AGENT_NAMES = ["general-purpose", "explore", "plan", "claude", "fork", "statusline-setup", "claude-code-guide"];
 
   var DEBUG = process.env.CDB_CUSTOM_MODELS_DEBUG === "1";
@@ -219,7 +223,8 @@
   //   subagentModel?: "deepseek-flash[1m]", // the model of sub-agents that name none
   //   providers: [{
   //     id: "deepseek", baseUrl: "https://api.deepseek.com/anthropic",
-  //     apiKey | apiKeyEnv | apiKeyFile, headers?, effortMap?, context?,
+  //     apiKey | apiKeyEnv | apiKeyFile, headers?, userAgent?, stripBillingHeader?,
+  //     effortMap?, context?,
   //     models: [{ id, name?, shortName?, description?, badge?, section?,
   //                context?, vision?, thinking?, webSearch?, effort?, effortDefault? }]
   //   }]
@@ -405,6 +410,17 @@
         else warnOnce("hdr" + id + k, "provider " + id + ": header " + JSON.stringify(k) + " is not a valid HTTP header - not sent");
       });
     }
+    // The User-Agent every request to this endpoint carries - the sessions'
+    // and the app's own (fetch models, test, detect). Absent: the runtime's.
+    var ua = typeof raw.userAgent === "string" ? raw.userAgent.trim() : "";
+    if (USER_AGENT_RE.test(ua)) p.userAgent = ua;
+    else if (ua || (raw.userAgent !== undefined && typeof raw.userAgent !== "string")) {
+      warnOnce("ua" + id, "provider " + id + ": userAgent must be printable ASCII, at most 300 characters - not sent");
+    }
+    // The CLI's billing line (cc_entrypoint=claude-desktop, first block of
+    // the system prompt) is meaningless to another provider: dropped there on
+    // request. Anthropic's API uses it, so never for a native provider.
+    if (raw.stripBillingHeader === true && !p.native) p.stripBillingHeader = true;
     if (isObj(raw.effortMap)) p.effortMap = raw.effortMap;
     if (typeof raw.webSearch === "string" && raw.webSearch.trim()) p.webSearch = raw.webSearch.trim();
     (Array.isArray(raw.models) ? raw.models : []).forEach(function (m, i) {
@@ -1166,6 +1182,8 @@
         }) };
       if (p.native) o.native = true;
       if (p.headers) o.headers = p.headers;
+      if (p.userAgent) o.userAgent = p.userAgent;
+      if (p.stripBillingHeader) o.stripBillingHeader = true;
       if (p.effortExplicit) o.effort = p.effort.slice();
       if (p.effortMap) o.effortMap = p.effortMap;
       return o;
@@ -1438,6 +1456,7 @@
         id: p.id, baseUrl: p.baseUrl, locked: p.locked, preset: p.preset || "", modelsUrl: p.modelsUrl || "",
         keyOk: p.apiKey.length > 8, keySource: p.keySource, effort: p.effort.slice(), context: p.context,
         shadowed: p.shadowed.slice(), native: p.native === true,
+        userAgent: p.userAgent || "", stripBillingHeader: p.stripBillingHeader === true,
         models: p.models.map(function (m) {
           return { id: m.id, alias: m.alias, listedAs: listedIds(m), name: m.name, description: m.description,
             vision: m.vision, thinking: m.thinking, webSearch: m.webSearch, context: m.context || p.context,
@@ -1549,6 +1568,16 @@
       var picked = EFFORT_ORDER.filter(function (l) { return input.effort.indexOf(l) !== -1; });
       if (!picked.length) return { error: "offer at least one effort level" };
       out.effort = picked;
+    }
+    // Both optional: a patch that does not name them leaves them as they are;
+    // an empty User-Agent or false clears them.
+    if (typeof input.userAgent === "string") {
+      var ua = input.userAgent.trim();
+      if (ua && !USER_AGENT_RE.test(ua)) return { error: "User-Agent: printable ASCII only, at most 300 characters" };
+      out.userAgent = ua;
+    }
+    if (typeof input.stripBillingHeader === "boolean") {
+      out.stripBillingHeader = input.stripBillingHeader && originOf(baseUrl) !== ANTHROPIC_API_ORIGIN;
     }
     return { value: out };
   }
@@ -1737,6 +1766,9 @@
       if (pr && pr.baseUrl && !sameOrigin(pr.baseUrl, next.baseUrl)) { delete next.preset; pr = null; }
       // The models URL is a plain field: empty clears it.
       if (!pp.value.modelsUrl) delete next.modelsUrl;
+      // Not credentials: they stay when the base URL changes host.
+      if (pp.value.userAgent === "") delete next.userAgent;
+      if (pp.value.stripBillingHeader === false) delete next.stripBillingHeader;
       if (pp.value.effort && pp.value.effort.length === EFFORT_ORDER.length && !(pr && pr.effort)) delete next.effort;
       if (key) next.apiKeyStored = true;
       if (!Array.isArray(next.models)) next.models = [];
@@ -1948,6 +1980,17 @@
   // Every request that carries a provider's key: a redirect is followed while
   // it stays on the same origin (3 hops at most) and refused when it leaves -
   // fetch would otherwise carry x-api-key and the custom headers along.
+  // The provider's custom headers onto a request of the app's own, then its
+  // User-Agent - over any spelling of one in those headers, so exactly one
+  // goes, the same the sessions send.
+  function withProviderHeaders(p, headers) {
+    if (p.headers) Object.keys(p.headers).forEach(function (k) { if (typeof p.headers[k] === "string") headers[k] = p.headers[k]; });
+    if (p.userAgent) {
+      Object.keys(headers).forEach(function (k) { if (k.toLowerCase() === "user-agent") delete headers[k]; });
+      headers["user-agent"] = p.userAgent;
+    }
+    return headers;
+  }
   function fetchSameOrigin(url, init, hops) {
     return fetch(url, Object.assign({}, init, { redirect: "manual" })).then(function (res) {
       var loc = res.status >= 300 && res.status < 400 && res.headers ? res.headers.get("location") : null;
@@ -2022,7 +2065,7 @@
     // answers in that shape: 20 per page, ids prefixed, no context length).
     // Anthropic's own endpoint and gateways proxying it need the second.
     var base = { "accept": "application/json", "x-api-key": p.apiKey, "authorization": "Bearer " + p.apiKey };
-    if (p.headers) Object.keys(p.headers).forEach(function (k) { if (typeof p.headers[k] === "string") base[k] = p.headers[k]; });
+    withProviderHeaders(p, base);
     var headerSets = [base, Object.assign({}, base, { "anthropic-version": "2023-06-01" })];
     var failures = [];
     var MAX_PAGES = 40;
@@ -2087,7 +2130,7 @@
     if (!modelId && p.models.length) modelId = p.models[0].id;
     if (!ID_RE.test(modelId)) return { ok: false, error: "add a model first - the probe sends it one minimal request with each level" };
     var headers = { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": p.apiKey };
-    if (p.headers) Object.keys(p.headers).forEach(function (k) { if (typeof p.headers[k] === "string") headers[k] = p.headers[k]; });
+    withProviderHeaders(p, headers);
     return Promise.all(EFFORT_ORDER.map(function (level) {
       var body = { model: modelId, max_tokens: 1025, messages: [{ role: "user", content: "Reply with OK." }],
         thinking: { type: "enabled", budget_tokens: 1024 }, output_config: { effort: level } };
@@ -2139,7 +2182,7 @@
     var model = p.models[0];
     var body = { model: model.id, max_tokens: 16, messages: [{ role: "user", content: "ping" }] };
     var headers = { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": p.apiKey };
-    if (p.headers) Object.keys(p.headers).forEach(function (k) { if (typeof p.headers[k] === "string") headers[k] = p.headers[k]; });
+    withProviderHeaders(p, headers);
     var ctl = new AbortController();
     var timer = setTimeout(function () { ctl.abort(); }, 20000);
     return fetchSameOrigin(p.baseUrl + "/v1/messages", { method: "POST", headers: headers, body: JSON.stringify(body), signal: ctl.signal })

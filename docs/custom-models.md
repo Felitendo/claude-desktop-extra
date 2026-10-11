@@ -65,6 +65,8 @@ The same settings can be written by hand under `customModels` in `claude-desktop
       "effort": ["low", "high", "max"],  // effort levels the API accepts (default: all five)
       "context": "1m",                   // "200k", "1m" or "both" (default: "1m")
       "headers": { "x-extra": "1" },     // optional, added to every request
+      "userAgent": "MyAgent/1.0",        // optional, the User-Agent of every request to it
+      "stripBillingHeader": true,        // optional, leaves out the CLI's billing line (not on Anthropic's API)
       "effortMap": { "xhigh": "high" },  // optional, renames a level for this API
       "models": [
         {
@@ -141,6 +143,11 @@ Some differences between providers and Anthropic are handled locally:
 - `count_tokens` is estimated locally, since compatible APIs do not serve it.
 - Regex spellings in tool schemas that some validators refuse (`\0`, `[\b]`, `[^]`) are rewritten to equivalent forms. DeepSeek refused every request carrying Claude Code's `Artifact` tool otherwise.
 
+What identifies the client can be set per provider, in its form or in the file:
+
+- **User-Agent.** Without one, a session's requests carry the runtime's own (`Bun/<version>`), the requests made from Settings (fetch models, test, detect) carry `node`, and on Anthropic's API the CLI's (`claude-cli/<version> (external, claude-desktop, …)`) goes. With `userAgent` set, every request to that provider carries it instead, over a `user-agent` in `headers`. Printable ASCII, 300 characters at most.
+- **The billing line.** Claude Code starts the system prompt with a block for Anthropic's billing (`x-anthropic-billing-header: cc_version=…; cc_entrypoint=claude-desktop; …`). `stripBillingHeader` leaves that block out of requests to the provider; the rest of the system prompt, which tells the model it runs in Claude Code, is unchanged. Not offered for Anthropic's API, which uses the line.
+
 **Anthropic's API** (the **Anthropic API** preset) is the exception: the CLI's request goes through unchanged, prompt caching and betas included, with your API key in place of the subscription's login. One line is changed: the attribution block at the top of the system prompt says `cc_entrypoint=cli` instead of `cc_entrypoint=claude-desktop`, because the API refuses `claude-desktop` on an API key. `cli` is what Claude Code itself sends when it runs interactively on an API key. Requests are billed to your API account at its normal rates.
 
 ### Changes to Anthropic traffic
@@ -164,7 +171,7 @@ A session still on a model that was removed gets a clear error naming the model.
 
 ### API keys
 
-A key only ever goes to the host of the base URL it was saved for. Changing a provider's base URL to another host drops its stored key and custom headers until a new key is entered, a model list must be on the same host, and redirects to another host are not followed. The settings page never receives a key, and the logs never print one.
+A key only ever goes to the host of the base URL it was saved for. Changing a provider's base URL to another host drops its stored key and custom headers until a new key is entered (its User-Agent and billing-line setting are not credentials and stay), a model list must be on the same host, and redirects to another host are not followed. The settings page never receives a key, and the logs never print one.
 
 ### How it works
 

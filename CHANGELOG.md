@@ -4,7 +4,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-11
 
-### Custom models: switching to a model with a minimum output length
+### Custom models: switching to a model with a minimum output length (thanks @rcdri, #272)
 
 - Switching a session to OpenRouter's `meta/muse-spark-1.3-contributor` failed with "Couldn't switch …
   HTTP 400: `max_output_tokens` The number must be `>= 16`". The CLI checks the model it switches to with
@@ -12,6 +12,16 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   `max_tokens` as at least 16. Anthropic's API (the native preset) still gets the CLI's request as it is.
 - The **test** button in Settings → Extra → Models sent `max_tokens: 1` too and failed on the same
   providers; it now sends 16.
+
+### Custom models: a User-Agent per provider, and the billing line left out on request (thanks @rcdri, #273)
+
+- A provider's form (and `userAgent` in the file) sets the User-Agent of every request to it: the sessions',
+  over the runtime's `Bun/<version>` (or the CLI's `claude-cli/… (external, claude-desktop, …)` on
+  Anthropic's API), and the ones Settings makes (fetch models, test, detect), over `node`.
+- **Drop the billing line** (`stripBillingHeader`) leaves the CLI's `x-anthropic-billing-header: …
+  cc_entrypoint=claude-desktop …` block out of the system prompt sent to a compatible provider. Not offered
+  for Anthropic's API, which uses it.
+- Neither is a credential: both stay when a provider's base URL moves to another host.
 
 ## 2026-10-10
 

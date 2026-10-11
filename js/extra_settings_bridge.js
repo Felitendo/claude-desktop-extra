@@ -150,7 +150,10 @@
       return ipcRenderer.invoke("cdb-cm:provider-set", provider && typeof provider === "object" ? {
         id: String(provider.id || ""), baseUrl: String(provider.baseUrl || ""), apiKey: String(provider.apiKey || ""),
         preset: String(provider.preset || ""), modelsUrl: String(provider.modelsUrl || ""),
-        effort: Array.isArray(provider.effort) ? provider.effort.map(String) : undefined
+        effort: Array.isArray(provider.effort) ? provider.effort.map(String) : undefined,
+        // Absent stays absent: the main process keeps the stored values then.
+        userAgent: typeof provider.userAgent === "string" ? provider.userAgent : undefined,
+        stripBillingHeader: typeof provider.stripBillingHeader === "boolean" ? provider.stripBillingHeader : undefined
       } : {});
     },
     customModelsWebSearchSet: function (value) {

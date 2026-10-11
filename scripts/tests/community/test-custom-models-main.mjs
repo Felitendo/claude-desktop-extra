@@ -730,6 +730,69 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
   rmSync(dir, { recursive: true, force: true });
 }
 
+// --- per-provider User-Agent and billing-line switch ---------------------------------
+{
+  const dir = mkdtempSync(join(tmpdir(), "cdb-cm-main-"));
+  switchOn(dir);
+  const { h, sandbox } = load(dir);
+  const routes = () => JSON.parse(readFileSync(join(dir, "custom-models", "routes.json"), "utf8"));
+  const jsonProvider = (id) => JSON.parse(readFileSync(join(dir, "claude-desktop-extra.json"), "utf8")).customModels.providers.find((p) => p.id === id);
+  let r = await h["cdb-cm:provider-set"](okSenderEv, { id: "or", baseUrl: "https://openrouter.ai/api", apiKey: "sk-or-1234567890",
+    userAgent: " MyAgent/1.0 ", stripBillingHeader: true });
+  ok(r.ok === true && r.providers[0].userAgent === "MyAgent/1.0" && r.providers[0].stripBillingHeader === true,
+     "the panel saves userAgent (trimmed) and stripBillingHeader, and reads them back: " + JSON.stringify(r.providers && r.providers[0]));
+  await h["cdb-cm:model-set"](okSenderEv, "or", { id: "meta/muse-spark" });
+  ok(routes().providers[0].userAgent === "MyAgent/1.0" && routes().providers[0].stripBillingHeader === true, "both reach routes.json");
+  sandbox.__fetchCalls.length = 0;
+  await h["cdb-cm:provider-test"](okSenderEv, "or");
+  await h["cdb-cm:models-list"](okSenderEv, "or");
+  await h["cdb-cm:effort-probe"](okSenderEv, "or", "");
+  ok(sandbox.__fetchCalls.length >= 3 && sandbox.__fetchCalls.every((c) => c.init.headers["user-agent"] === "MyAgent/1.0"),
+     "the connection test, the model list and effort detection send it too: " + sandbox.__fetchCalls.map((c) => c.init.headers["user-agent"]).join(","));
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "or", baseUrl: "https://openrouter.ai/api", apiKey: "" });
+  ok(r.ok === true && r.providers[0].userAgent === "MyAgent/1.0" && r.providers[0].stripBillingHeader === true, "an edit that does not name them keeps them");
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "or", baseUrl: "https://gw.example/api", apiKey: "" });
+  ok(r.ok === true && r.providers[0].userAgent === "MyAgent/1.0", "the base URL moving to another host keeps the User-Agent - it is not a credential");
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "or", baseUrl: "https://gw.example/api", apiKey: "", userAgent: "", stripBillingHeader: false });
+  ok(r.ok === true && r.providers[0].userAgent === "" && r.providers[0].stripBillingHeader === false &&
+     !("userAgent" in jsonProvider("or")) && !("stripBillingHeader" in jsonProvider("or")), "an empty userAgent and false clear both from the .json");
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "or", baseUrl: "https://gw.example/api", apiKey: "", userAgent: "bad\r\nx-evil: 1" });
+  ok(r.ok === false && /User-Agent/.test(r.error), "a User-Agent with a line break is refused: " + r.error);
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "or", baseUrl: "https://gw.example/api", apiKey: "", userAgent: "x".repeat(301) });
+  ok(r.ok === false && /User-Agent/.test(r.error), "a User-Agent over 300 characters is refused");
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "or", baseUrl: "https://gw.example/api", apiKey: "", userAgent: "Agent/1.0 (ü)" });
+  ok(r.ok === false && /User-Agent/.test(r.error), "a non-ASCII User-Agent is refused - fetch would fail every request");
+  // Anthropic's API: the User-Agent applies; the switch does not (Anthropic uses the billing line).
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "ant", baseUrl: "https://api.anthropic.com", apiKey: "sk-ant-api-1234567890",
+    userAgent: "MyAgent/1.0", stripBillingHeader: true });
+  await h["cdb-cm:model-set"](okSenderEv, "ant", { id: "claude-opus-5-5" });
+  const ant = routes().providers.find((p) => p.id === "ant");
+  ok(ant && ant.userAgent === "MyAgent/1.0" && !("stripBillingHeader" in ant) && r.providers.find((p) => p.id === "ant").stripBillingHeader === false,
+     "on Anthropic's API the User-Agent applies and the billing switch does not: " + JSON.stringify(ant));
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  // Hand-written in the .jsonc: a valid value is used, over a User-Agent in headers; an invalid one is dropped with a warning.
+  const dir = mkdtempSync(join(tmpdir(), "cdb-cm-main-"));
+  writeFileSync(join(dir, "claude-desktop-extra.jsonc"), `{ "customModels": { "enabled": true, "providers": [
+    { "id": "gw", "baseUrl": "https://gw.example/anthropic", "apiKey": "sk-test-1234567890", "userAgent": "Hand/2.0",
+      "headers": { "User-Agent": "from-headers/0" }, "models": [{ "id": "m1" }] },
+    { "id": "bad", "baseUrl": "https://bad.example/anthropic", "apiKey": "sk-test-1234567890", "userAgent": "two\\nlines",
+      "stripBillingHeader": "yes", "models": [{ "id": "m2" }] }] } }`);
+  const { h, sandbox, diag } = load(dir);
+  const cfg = await h["cdb-cm:config-read"](okSenderEv);
+  const gw = cfg.providers.find((p) => p.id === "gw"), bad = cfg.providers.find((p) => p.id === "bad");
+  ok(gw.userAgent === "Hand/2.0" && bad.userAgent === "" && bad.stripBillingHeader === false,
+     "the .jsonc's userAgent is read; an invalid one and a non-boolean switch are dropped: " + JSON.stringify([gw.userAgent, bad.userAgent, bad.stripBillingHeader]));
+  ok(diag.some((l) => /bad.*userAgent/.test(l)), "and the invalid one is reported in the log");
+  sandbox.__fetchCalls.length = 0;
+  await h["cdb-cm:provider-test"](okSenderEv, "gw");
+  const sent = sandbox.__fetchCalls[0].init.headers;
+  ok(Object.keys(sent).filter((k) => k.toLowerCase() === "user-agent").length === 1 && sent["user-agent"] === "Hand/2.0",
+     "the app's own request carries one User-Agent, userAgent's: " + JSON.stringify(sent));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 // --- SECURITY: a stored key never follows its provider to another host --------
 // The page (remote claude.ai code) can call every channel above. It must not
 // be able to re-point a provider at its own server and have test, fetch
