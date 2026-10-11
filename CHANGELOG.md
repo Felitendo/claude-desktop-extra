@@ -10,6 +10,8 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   HTTP 400: `max_output_tokens` The number must be `>= 16`". The CLI checks the model it switches to with
   `max_tokens: 1`, and some upstreams refuse fewer than 16 output tokens. The preload now sends
   `max_tokens` as at least 16. Anthropic's API (the native preset) still gets the CLI's request as it is.
+- The **test** button in Settings → Extra → Models sent `max_tokens: 1` too and failed on the same
+  providers; it now sends 16.
 
 ## 2026-10-10
 

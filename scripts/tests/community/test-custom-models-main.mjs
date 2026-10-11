@@ -684,14 +684,16 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
   ok(r.ok === false && /no model list found/.test(r.error) && /HTTP 404/.test(r.error), "every candidate failing is reported with the attempts");
   sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ id: "msg" }), { status: 200 }));
 
-  // The connectivity test: one token to the first model with the stored key.
+  // The connectivity test: a minimal request to the first model with the stored key.
   sandbox.__fetchCalls.length = 0;
   r = await h["cdb-cm:provider-test"](okSenderEv, "ds");
   ok(r.ok === true && r.status === 200 && r.model === "deepseek-flash", "provider-test reports the answer");
   const call = sandbox.__fetchCalls[0];
   ok(call && call.url === "https://api.deepseek.com/anthropic/v1/messages" && call.init.headers["x-api-key"] === "sk-secret-1234567890" &&
-     JSON.parse(call.init.body).max_tokens === 1 && JSON.parse(call.init.body).model === "deepseek-flash",
-     "it posts one token to <baseUrl>/v1/messages with the stored key");
+     JSON.parse(call.init.body).model === "deepseek-flash",
+     "it posts to <baseUrl>/v1/messages with the stored key");
+  ok(JSON.parse(call.init.body).max_tokens === 16,
+     "with max_tokens 16, the floor some upstreams enforce (OpenRouter's meta/muse-spark refuses less), not 1: " + JSON.parse(call.init.body).max_tokens);
   sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ error: { message: "invalid api key" } }), { status: 401 }));
   r = await h["cdb-cm:provider-test"](okSenderEv, "ds");
   ok(r.ok === false && r.status === 401 && /invalid api key/.test(r.error), "a provider error is reported with its message");

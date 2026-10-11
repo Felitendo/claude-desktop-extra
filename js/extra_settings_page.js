@@ -2730,7 +2730,7 @@
       var aside = el("div", "cdbx-row-aside");
       var test = el("button", "cdbx-clear", "test");
       test.type = "button";
-      test.title = "Send one token to the first model with the stored key";
+      test.title = "Send a minimal request to the first model with the stored key";
       function showTest(text, bad) {
         testLine.textContent = text;
         testLine.className = "cdbx-note cdbx-models-testline" + (bad ? " cdbx-models-warn" : "");
@@ -2740,7 +2740,7 @@
       test.addEventListener("click", function () {
         // Never a silent button: what is missing is said instead.
         if (!p.keyOk) { showTest("Provider " + p.id + ": no API key - edit the provider and paste one", true); return; }
-        if (!p.models.length) { showTest("Provider " + p.id + ": add a model first (test sends one token to the first model)", true); return; }
+        if (!p.models.length) { showTest("Provider " + p.id + ": add a model first (test sends a minimal request to the first model)", true); return; }
         test.disabled = true;
         test.textContent = "testing...";
         api.customModelsTest(p.id).then(function (r) {
