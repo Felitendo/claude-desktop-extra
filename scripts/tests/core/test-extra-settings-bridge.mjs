@@ -57,6 +57,16 @@ const api = exposed.api;
   ok(calls[0][0] === "cdb-cm:provider-set" && p.id === "openrouter" && p.apiKey === "sk-x" && p.preset === "openrouter" &&
      p.modelsUrl === "https://openrouter.ai/api/v1/models" && p.effort.join(",") === "low,max" && !("secret" in p),
      "provider-set forwards its fields and nothing else");
+  ok(p.userAgent === undefined && p.stripBillingHeader === undefined, "provider-set leaves out userAgent and stripBillingHeader when the page does not send them");
+}
+{
+  calls.length = 0;
+  api.customModelsProviderSet({ id: "openrouter", baseUrl: "https://openrouter.ai/api", apiKey: "", userAgent: "MyAgent/1.0", stripBillingHeader: true });
+  const p = calls[0][1];
+  ok(p.userAgent === "MyAgent/1.0" && p.stripBillingHeader === true, "provider-set forwards userAgent and stripBillingHeader");
+  calls.length = 0;
+  api.customModelsProviderSet({ id: "openrouter", baseUrl: "https://openrouter.ai/api", apiKey: "", userAgent: "", stripBillingHeader: "yes" });
+  ok(calls[0][1].userAgent === "" && calls[0][1].stripBillingHeader === undefined, "an empty userAgent goes (it clears); a non-boolean switch does not");
 }
 {
   calls.length = 0;

@@ -2983,6 +2983,16 @@
         "Where the provider lists its models (GET, OpenAI or Anthropic shape), on the base URL's host - the key " +
         "goes nowhere else. Left empty, fetch models tries the preset's address, then <base URL>/v1/models, " +
         "<origin>/v1/models and <origin>/models.");
+      var userAgent = field(form, "User-Agent", input("text", existing ? existing.userAgent || "" : "", "optional - the runtime's own"),
+        "Sent with every request to this endpoint: the sessions', and fetch models, test and detect here. Empty: " +
+        "Claude Code's runtime default (Bun/<version>), or on Anthropic's API the CLI's own. Printable ASCII, " +
+        "300 characters at most.");
+      // Anthropic's API uses the billing line: not offered there.
+      var stripBilling = existing && existing.native ? null
+        : field(form, "Drop the billing line", checkbox(existing ? existing.stripBillingHeader : false),
+          "Claude Code starts the system prompt with a line for Anthropic's billing (x-anthropic-billing-header: ... " +
+          "cc_entrypoint=claude-desktop ...). On: it is left out of requests to this endpoint; the rest of the " +
+          "prompt is unchanged. Ignored for Anthropic's API, which uses it.");
       // Effort: an API convention of the provider (DeepSeek: low/high/max),
       // so it is set here and every model of the provider inherits it. The
       // preset fills it when it knows; detect asks the provider (one minimal
@@ -3047,7 +3057,8 @@
       save.addEventListener("click", function () {
         save.disabled = true;
         var payload = { id: id.value, baseUrl: url.value, apiKey: key.value, preset: chosenPreset, modelsUrl: modelsUrl.value,
-          effort: EFFORT_LEVELS.filter(function (lv) { return levelBoxes[lv].checked; }) };
+          userAgent: userAgent.value, effort: EFFORT_LEVELS.filter(function (lv) { return levelBoxes[lv].checked; }) };
+        if (stripBilling) payload.stripBillingHeader = stripBilling.checked;
         api.customModelsProviderSet(payload).then(function (r) {
           if (failed(r)) { save.disabled = false; toast("Could not save: " + reason(r), true); return; }
           refresh(r);

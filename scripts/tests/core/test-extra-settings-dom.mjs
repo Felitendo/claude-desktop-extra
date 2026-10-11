@@ -1120,8 +1120,12 @@ async function modelsPanel(modelsItem) {
     preset.value = "deepseek";
     preset.dispatchEvent(new Event("change", { bubbles: true }));
     const f = addForm.querySelectorAll("input.cdbx-input");
-    ok(f[0].value === "deepseek" && f[1].value === "https://api.deepseek.com/anthropic" && f[3].value === "https://api.deepseek.com/v1/models" && f.length === 4,
+    ok(f[0].value === "deepseek" && f[1].value === "https://api.deepseek.com/anthropic" && f[3].value === "https://api.deepseek.com/v1/models" && f.length === 5,
        "the preset prefills id, base URL and models URL");
+    ok(fieldControl(addForm, "User-Agent") === f[4] && f[4].value === "" && fieldControl(addForm, "Drop the billing line").checked === false,
+       "a new provider's User-Agent starts empty and the billing line is kept");
+    f[4].value = "MyAgent/1.0";
+    fieldControl(addForm, "Drop the billing line").checked = true;
     const plv = addForm.querySelectorAll(".cdbx-models-level input[type=checkbox]");
     ok(plv.length === 5 && Array.from(plv).map((c) => c.checked).join(",") === "true,false,true,false,true",
        "and ticks the effort levels it knows (low/high/max)");
@@ -1134,6 +1138,9 @@ async function modelsPanel(modelsItem) {
     await sleep(80);
     ok(window.__cmWrites.some((w) => w === "provider-set:ds2:https://api.deepseek.com/anthropic:key:deepseek:https://api.deepseek.com/v1/models:low/high/max"),
        "Add provider sends the id, URL, key, preset, models URL and effort levels: " + JSON.stringify(window.__cmWrites));
+    const sentP = (window.__cmProviderPayloads || []).filter((p) => p.id === "ds2").pop();
+    ok(!!sentP && sentP.userAgent === "MyAgent/1.0" && sentP.stripBillingHeader === true,
+       "and the User-Agent and the billing-line switch: " + JSON.stringify(sentP));
     ok(!window.__cmWrites.some((w) => /^model-set:ds2/.test(w)), "no model is added silently - fetch models is the next step");
     ok(!/sk-secret-123456/.test(panel.textContent), "the key never appears in the panel");
     // By hand (no preset): the provider alone, the card's Add a model is next.
@@ -1147,6 +1154,8 @@ async function modelsPanel(modelsItem) {
     await sleep(80);
     ok(window.__cmWrites.length === 1 && window.__cmWrites[0] === "provider-set:gw2:https://gw.example/anthropic:nokey:::low/medium/high/xhigh/max",
        "by hand: only the provider is created, no preset, all five levels: " + JSON.stringify(window.__cmWrites));
+    const sentG = (window.__cmProviderPayloads || []).filter((p) => p.id === "gw2").pop();
+    ok(!!sentG && sentG.userAgent === "" && sentG.stripBillingHeader === false, "untouched, they go empty and off: " + JSON.stringify(sentG));
 
   // Edit the existing provider: detect is live there and ticks what the
   // provider accepted.
@@ -1197,9 +1206,29 @@ async function modelsPanel(modelsItem) {
       if (s) { s.click(); await sleep(60); }
     };
     window.__cmConfig = JSON.parse(JSON.stringify(cfg));
+    // The stored User-Agent and switch fill the edit form; a native provider has no switch.
+    const editedForm = async () => {
+      const card = panel.querySelectorAll(".cdbx-models-card")[0];
+      Array.from(card.querySelectorAll(".cdbx-row-aside button")).find((b) => b.textContent === "edit").click();
+      await sleep(30);
+      return card.querySelector(".cdbx-models-form");
+    };
+    window.__cmConfig.providers[0].userAgent = "Other/2.0";
+    window.__cmConfig.providers[0].stripBillingHeader = true;
+    await saveVia(panel.querySelectorAll(".cdbx-models-card")[0]);
+    let ef = await editedForm();
+    ok(fieldControl(ef, "User-Agent").value === "Other/2.0" && fieldControl(ef, "Drop the billing line").checked === true,
+       "a compatible provider's form shows its User-Agent and its billing-line switch");
+    Array.from(ef.querySelectorAll("button")).find((b) => b.textContent === "cancel").click();
+    window.__cmConfig = JSON.parse(JSON.stringify(cfg));
     window.__cmConfig.providers[0].shadowed = ["claude-opus-5-5", "claude-sonnet-5-5"];
     window.__cmConfig.providers[0].native = true;
+    window.__cmConfig.providers[0].userAgent = "Pre/1.0";
     await saveVia(panel.querySelectorAll(".cdbx-models-card")[0]);
+    ef = await editedForm();
+    ok(fieldControl(ef, "User-Agent").value === "Pre/1.0" && fieldControl(ef, "Drop the billing line") === null,
+       "a native provider's form shows its User-Agent and no billing-line switch (Anthropic uses that line)");
+    Array.from(ef.querySelectorAll("button")).find((b) => b.textContent === "cancel").click();
     const cardS = panel.querySelectorAll(".cdbx-models-card");
     const line = cardS[0].querySelector(".cdbx-models-shadowed");
     ok(!!line && /^Skipped: claude-opus-5-5, claude-sonnet-5-5 - listed under this provider's id, they would still carry one of Anthropic's own model ids/.test(line.textContent) &&
@@ -2199,6 +2228,14 @@ var results = [];
 var diags = [];
 function ok(cond, what) { results.push((cond ? "PASS " : "FAIL ") + what); }
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+// The control of a form row by its label, or null when the form has no such row.
+function fieldControl(form, label) {
+  var row = Array.from(form.querySelectorAll(".cdbx-models-field")).find(function (r) {
+    var l = r.querySelector(".cdbx-id");
+    return l && l.textContent === label;
+  });
+  return row ? row.querySelector(".cdbx-row-aside input") : null;
+}
 function sameClasses(a, b, ignore) {
   var skip = ignore || [];
   var norm = function (n) {
@@ -2368,7 +2405,7 @@ window.cdbExtra = {
   // provider without a key. Writes are recorded and answered with the same
   // state, which is what the panel redraws from.
   customModelsConfig: function () { return Promise.resolve(window.__cmConfig); },
-  customModelsProviderSet: function (p) { window.__cmWrites = (window.__cmWrites || []).concat(["provider-set:" + p.id + ":" + p.baseUrl + ":" + (p.apiKey ? "key" : "nokey") + ":" + p.preset + ":" + p.modelsUrl + ":" + (p.effort ? p.effort.join("/") : "-")]); return Promise.resolve(window.__cmConfig); },
+  customModelsProviderSet: function (p) { window.__cmProviderPayloads = (window.__cmProviderPayloads || []).concat([JSON.parse(JSON.stringify(p))]); window.__cmWrites =(window.__cmWrites || []).concat(["provider-set:" + p.id + ":" + p.baseUrl + ":" + (p.apiKey ? "key" : "nokey") + ":" + p.preset + ":" + p.modelsUrl + ":" + (p.effort ? p.effort.join("/") : "-")]); return Promise.resolve(window.__cmConfig); },
   customModelsModelsList: function (pid) { window.__cmWrites = (window.__cmWrites || []).concat(["list:" + pid]); return Promise.resolve(window.__cmModelsList || { ok: true, source: "https://api.deepseek.com/v1/models", models: [{ id: "deepseek-flash", name: "deepseek-flash" }, { id: "deepseek-v4-pro", name: "deepseek-v4-pro" }] }); },
   customModelsWebSearchSet: function (v) { window.__cmWrites = (window.__cmWrites || []).concat(["websearch-set:" + v]); return Promise.resolve(window.__cmConfig); },
   customModelsSmallFastSet: function (v) { window.__cmWrites = (window.__cmWrites || []).concat(["smallfast-set:" + v]); return Promise.resolve(window.__cmConfig); },

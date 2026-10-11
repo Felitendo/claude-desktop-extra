@@ -2,6 +2,18 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-11
+
+### Custom models: a User-Agent per provider, and the billing line left out on request
+
+- A provider's form (and `userAgent` in the file) sets the User-Agent of every request to it: the sessions',
+  over the runtime's `Bun/<version>` (or the CLI's `claude-cli/… (external, claude-desktop, …)` on
+  Anthropic's API), and the ones Settings makes (fetch models, test, detect), over `node`.
+- **Drop the billing line** (`stripBillingHeader`) leaves the CLI's `x-anthropic-billing-header: …
+  cc_entrypoint=claude-desktop …` block out of the system prompt sent to a compatible provider. Not offered
+  for Anthropic's API, which uses it.
+- Neither is a credential: both stay when a provider's base URL moves to another host.
+
 ## 2026-10-10
 
 ### Custom models in the Code picker (new community feature, thanks @hexadecimil, #270)
