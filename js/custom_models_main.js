@@ -1977,9 +1977,6 @@
     return detail(readConfig());
   });
 
-  // Every request that carries a provider's key: a redirect is followed while
-  // it stays on the same origin (3 hops at most) and refused when it leaves -
-  // fetch would otherwise carry x-api-key and the custom headers along.
   // The provider's custom headers onto a request of the app's own, then its
   // User-Agent - over any spelling of one in those headers, so exactly one
   // goes, the same the sessions send.
@@ -1991,6 +1988,9 @@
     }
     return headers;
   }
+  // Every request that carries a provider's key: a redirect is followed while
+  // it stays on the same origin (3 hops at most) and refused when it leaves -
+  // fetch would otherwise carry x-api-key and the custom headers along.
   function fetchSameOrigin(url, init, hops) {
     return fetch(url, Object.assign({}, init, { redirect: "manual" })).then(function (res) {
       var loc = res.status >= 300 && res.status < 400 && res.headers ? res.headers.get("location") : null;
