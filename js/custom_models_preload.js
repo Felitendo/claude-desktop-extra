@@ -301,6 +301,11 @@
   // thinking budget is at least 1024 tokens and below max_tokens.
   var MIN_THINKING_BUDGET = 1024;
   var MAX_THINKING_BUDGET = 16000;
+  // The CLI checks the model a session switches to with max_tokens: 1
+  // (querySource "model_validation"), and some upstreams refuse fewer than 16
+  // output tokens - OpenRouter's meta/muse-spark answers 400 "`max_output_tokens`
+  // The number must be `>= 16`", which cancels the switch. 16 costs nothing.
+  var MIN_MAX_TOKENS = 16;
 
   // An effort value the provider does not know (a level ticked that its
   // API does not have): it answers 400 naming the effort - the request is
@@ -362,6 +367,7 @@
     ["max_tokens", "stream", "temperature", "top_p", "stop_sequences"].forEach(function (k) {
       if (body[k] !== undefined) out[k] = body[k];
     });
+    if (typeof out.max_tokens === "number" && out.max_tokens < MIN_MAX_TOKENS) out.max_tokens = MIN_MAX_TOKENS;
     if (typeof body.system === "string") out.system = body.system;
     else if (Array.isArray(body.system)) {
       var sys = body.system.filter(function (b) { return b && b.type === "text" && typeof b.text === "string"; })

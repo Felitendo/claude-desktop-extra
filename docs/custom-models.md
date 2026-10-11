@@ -135,6 +135,7 @@ The request is reduced to what Anthropic-compatible APIs document: the model, `m
 Some differences between providers and Anthropic are handled locally:
 
 - A history with thinking blocks signed by Claude is resent without them when the provider refuses it, and a refused effort level is retried without effort. Both are logged.
+- `max_tokens` is sent as at least 16. The CLI checks a model it switches to with `max_tokens: 1`, and some upstreams refuse fewer than 16 output tokens (OpenRouter's `meta/muse-spark`), which cancelled the switch. The provider's **test** button sends 16 for the same reason.
 - When the account has server-side threads on, the CLI may send only the end of a conversation. Such a request is refused locally with the error that makes the CLI resend the whole turn.
 - A provider's 401 or 403 reaches the CLI as a 400 with the provider's message, so the CLI does not try to renew its own login.
 - `count_tokens` is estimated locally, since compatible APIs do not serve it.

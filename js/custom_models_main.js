@@ -2121,9 +2121,12 @@
     });
   });
 
-  // A one-token round trip to the provider with the stored key, so a typo in
+  // A minimal round trip to the provider with the stored key, so a typo in
   // the URL or the key shows here and not as a failed session. Costs the
-  // provider's minimum billable request.
+  // provider's minimum billable request. max_tokens 16, not 1: some upstreams
+  // refuse fewer than 16 output tokens (OpenRouter's meta/muse-spark answers
+  // 400 "`max_output_tokens` The number must be `>= 16`") - the floor the
+  // preload applies to the sessions' requests too.
   _ipc.handle("cdb-cm:provider-test", function (ev, providerId) {
     if (!okSender(ev)) return { ok: false, error: "rejected: unrecognized sender" };
     providerId = cleanString(providerId, 40);
@@ -2132,9 +2135,9 @@
     cfg.allProviders.forEach(function (x) { if (x.id === providerId) p = x; });
     if (!p) return { ok: false, error: "unknown provider " + providerId };
     if (!p.apiKey) return { ok: false, error: "no API key for provider " + providerId };
-    if (!p.models.length) return { ok: false, error: "add a model first - the test sends one token to it" };
+    if (!p.models.length) return { ok: false, error: "add a model first - the test sends a minimal request to it" };
     var model = p.models[0];
-    var body = { model: model.id, max_tokens: 1, messages: [{ role: "user", content: "ping" }] };
+    var body = { model: model.id, max_tokens: 16, messages: [{ role: "user", content: "ping" }] };
     var headers = { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": p.apiKey };
     if (p.headers) Object.keys(p.headers).forEach(function (k) { if (typeof p.headers[k] === "string") headers[k] = p.headers[k]; });
     var ctl = new AbortController();

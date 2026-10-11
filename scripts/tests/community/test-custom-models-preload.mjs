@@ -194,6 +194,30 @@ const ANTHROPIC = "https://api.anthropic.com/v1/messages";
      "adaptive thinking becomes enabled with the clamped budget, effort travels with it");
 }
 
+// --- max_tokens has a floor of 16: the CLI's model check sends 1 ---------------------
+{
+  const { hooked, calls } = load(CONFIG);
+  const send = (extra) => hooked(ANTHROPIC, messagesInit(Object.assign({ model: "claude-deepseek-flash",
+    messages: [{ role: "user", content: "." }] }, extra)));
+  await send({ max_tokens: 1 });
+  ok(JSON.parse(calls[0].init.body).max_tokens === 16, "max_tokens 1 (the model check on a switch) is sent as 16");
+  await send({ max_tokens: 15 });
+  ok(JSON.parse(calls[1].init.body).max_tokens === 16, "any max_tokens below 16 is sent as 16");
+  await send({ max_tokens: 16 });
+  ok(JSON.parse(calls[2].init.body).max_tokens === 16, "16 is kept");
+  await send({});
+  ok(!("max_tokens" in JSON.parse(calls[3].init.body)), "an absent max_tokens stays absent");
+  await send({ max_tokens: 1, thinking: { type: "enabled", budget_tokens: 2048 } });
+  ok(!("thinking" in JSON.parse(calls[4].init.body)), "the raised max_tokens is still too small for thinking: none is sent");
+  // Anthropic's own API takes max_tokens 1: the native body is the CLI's.
+  const native = { providers: [{ id: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-ant-api-1234567890", native: true,
+    models: [{ id: "claude-opus-5-5", alias: "claude-anthropic-opus-5-5" }] }] };
+  const { hooked: hn, calls: cn } = load(native);
+  await hn("https://api.anthropic.com/v1/messages?beta=true", messagesInit({ model: "claude-anthropic-opus-5-5", max_tokens: 1,
+    messages: [{ role: "user", content: "." }] }));
+  ok(JSON.parse(cn[0].init.body).max_tokens === 1, "a native provider gets the CLI's max_tokens 1 as it is");
+}
+
 // --- effort: an explicit list is sent as it is, effortMap overlays -----------------
 {
   const cfg = JSON.parse(JSON.stringify(CONFIG));
