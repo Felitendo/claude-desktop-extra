@@ -2,6 +2,15 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-11
+
+### Custom models: switching to a model with a minimum output length
+
+- Switching a session to OpenRouter's `meta/muse-spark-1.3-contributor` failed with "Couldn't switch …
+  HTTP 400: `max_output_tokens` The number must be `>= 16`". The CLI checks the model it switches to with
+  `max_tokens: 1`, and some upstreams refuse fewer than 16 output tokens. The preload now sends
+  `max_tokens` as at least 16. Anthropic's API (the native preset) still gets the CLI's request as it is.
+
 ## 2026-10-10
 
 ### Custom models in the Code picker (new community feature, thanks @hexadecimil, #270)
