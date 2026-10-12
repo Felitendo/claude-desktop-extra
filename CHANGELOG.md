@@ -4,7 +4,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-12
 
-### Panel tabs
+### Panel tabs (thanks @dels07, #274)
 
 - **Opening a panel switches to it.** Pressing Anthropic's Diff / Browser / Terminal header button
   while another panel was showing added the new panel as a tab but left the old one in front. Opening
