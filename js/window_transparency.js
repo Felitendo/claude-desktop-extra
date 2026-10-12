@@ -271,18 +271,28 @@
     var FADE = String(Math.round(a * 50) / 100);
     function mix(v) { return "color-mix(in srgb,var(" + v + ") " + P + ",transparent)"; }
     // Only ONE layer may carry the alpha at any point of the screen: stacked
-    // translucent layers multiply (0.6 over 0.6 is 0.84). So the outer wrappers
-    // (page, root, frame, content column) go fully clear and the visible
-    // PAGE-level surfaces take the alpha: the sidebar, bg-surface-0/1 and bg-page
-    // (the page colour that sticky headers and the composer dock use to hide
+    // translucent layers multiply (0.6 over 0.6 is 0.84). In the app frame
+    // .dframe-root is that layer: the wrappers around it and the page-level
+    // surfaces inside it (sidebar, bg-surface-1, the Code tab's panel cards) go
+    // clear. Outside the frame bg-surface-0/1 take the alpha. bg-page (the page
+    // colour that sticky headers and the composer dock use to hide
     // scrolled content - hiding is exactly what a translucent window cannot do,
     // so those fade instead of masking). Surfaces are re-derived from upstream's
     // own --cds-* tokens with color-mix, so a custom theme's colours are kept.
     // bg-surface-2/3 are the CARD level - menus, popovers, the prompt box - and
     // stay solid so they read against whatever is behind the window.
     return "" +
-      "html,html body,html #root,html [id=root],html .dframe-root,html .dframe-content,html .dframe-main,html main.dframe-main{background:transparent!important}" +
-      "html .dframe-sidebar{background-color:hsl(var(--bg-200) / " + A + ")!important}" +
+      "html,html body,html #root,html [id=root],html .dframe-content,html .dframe-main,html main.dframe-main{background:transparent!important}" +
+      // In the app frame the alpha layer is .dframe-root itself, and nothing
+      // above or inside it may add a second one. Above it sit body.bg-surface-1
+      // and a full-window bg-surface-1 wrapper ([data-sim-native-ground]); with
+      // both tinted, the page was 0.96 and the sidebar and the Code tab's side
+      // panels, one layer more, ~0.99. Pages without the frame keep body.
+      "html :is(body,.bg-surface-0,.bg-surface-1,.bg-surface-2,.bg-page):has(.dframe-root){background:transparent!important}" +
+      "html .dframe-root{background-color:" + mix("--cds-page-bg") + "!important}" +
+      // Sidebar: two classes so a custom theme's "[data-darker] .dframe-sidebar"
+      // (also !important) cannot put its solid colour back.
+      "html .dframe-root .dframe-sidebar{background:transparent!important}" +
       "html .bg-surface-0{background-color:" + mix("--cds-surface-0") + "!important}" +
       "html .bg-surface-1{background-color:" + mix("--cds-surface-1") + "!important}" +
       "html .bg-page,html [data-cds-dock-masked] .in-data-cds-dock-masked\\:bg-page{background-color:" + mix("--cds-page-bg") + "!important}" +
@@ -298,6 +308,19 @@
       // markup changes - would otherwise show the page behind the dialog. The
       // extra attribute makes this the more specific rule, whatever the order.
       "html [data-cds=Dialog].bg-surface-2{background-color:var(--cds-surface-2)!important}" +
+      // Inside the frame, page-coloured surfaces and the Code tab's panel cards
+      // (Terminal / Diff / File, data-surface=panel) sit on .dframe-root, so
+      // they go clear instead of stacking a second alpha.
+      "html .dframe-root .bg-surface-1,html .dframe-root .bg-surface-2.rounded-card:not([data-cds=Dialog]),html .dframe-root [data-surface=panel]{background:transparent!important}" +
+      // Panel contents with an inline opaque code-theme colour: the terminal
+      // (wrapper + xterm's scroll element) and the diff CodeView. The diff's
+      // sticky file headers keep a page-coloured strip so scrolled lines fade
+      // under them instead of showing through at full strength.
+      "html .dframe-root [class~=\"group/terminal\"],html .dframe-root .xterm-scrollable-element,html .dframe-root .xterm-viewport,html .dframe-root [data-surface=panel] [data-cds=CodeView]{background:transparent!important}" +
+      // The File tab's viewer is CodeMirror, whose generated theme class paints
+      // the editor and its gutters in the code-theme colour.
+      "html .dframe-root [data-surface=panel] .cm-editor,html .dframe-root [data-surface=panel] .cm-gutters{background-color:transparent!important}" +
+      "html .dframe-root [data-surface=panel] .epitaxy-panel-subheader[data-sticky]{background-color:" + mix("--cds-page-bg") + "!important}" +
       "html .bg-surface-3,html .bg-surface-popover{background-color:var(--cds-surface-3)!important}" +
       "html [role=menu],html [role=listbox]{background-color:var(--cds-surface-3)!important}" +
       "html [class*=approval-dock]{background:transparent!important}" +

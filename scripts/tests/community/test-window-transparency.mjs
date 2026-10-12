@@ -146,14 +146,30 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
 </style><style>${css}</style>
 <div id="dlg" data-cds="Dialog" class="bg-surface-2 rounded-card"></div>
 <div id="card" class="bg-surface-2 rounded-card"></div>
+<div id="ground" class="bg-surface-1" data-sim-native-ground><div id="frame" class="dframe-root">
+<aside id="side" class="dframe-sidebar"></aside>
+<main class="dframe-content"><div id="page" class="bg-surface-1"></div>
+<div id="panel" class="rounded-card bg-surface-2" data-surface="panel" style="background:#1a1a19">
+<div id="term" class="group/terminal" style="background-color:rgb(26,26,25)"><div id="xterm" class="xterm-scrollable-element" style="background-color:rgb(26,26,25)"></div></div>
+<div id="code" data-cds="CodeView" style="background-color:#1a1a19"></div>
+<div id="cm" class="cm-editor" style="background-color:#1a1a19"><div id="gut" class="cm-gutters" style="background-color:#1a1a19"></div></div></div>
+<div id="fdlg" data-cds="Dialog" class="bg-surface-2 rounded-card"></div></main></div></div>
 <pre id="o"></pre>
-<script>o.textContent="CDB-BEGIN"+JSON.stringify({dlg:getComputedStyle(dlg).backgroundColor,card:getComputedStyle(card).backgroundColor})+"CDB-END"</script>`);
+<script>var r={};["dlg","card","ground","frame","side","page","panel","term","xterm","code","cm","gut","fdlg"].forEach(function(k){r[k]=getComputedStyle(document.getElementById(k)).backgroundColor});r.body=getComputedStyle(document.body).backgroundColor;o.textContent="CDB-BEGIN"+JSON.stringify(r)+"CDB-END"</script>`);
     const dump = execFileSync(chromium, ["--headless", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=2000",
       "--dump-dom", "file://" + f], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     const m = /CDB-BEGIN(\{.*?\})CDB-END/.exec(dump.replace(/&quot;/g, '"'));
     const got = m ? JSON.parse(m[1]) : {};
     ok(/^rgb\(38, 38, 36\)$/.test(got.dlg || ""), "a Dialog card renders solid surface-2 (" + got.dlg + ")");
     ok(!!got.card && !/^rgb\(/.test(got.card), "the same classes without data-cds=Dialog still fade (" + got.card + ")");
+    // In the app frame only .dframe-root carries the alpha: the wrappers above it
+    // (body, the bg-surface-1 ground) and the sidebar, page surfaces, Code-tab
+    // panel cards, terminal and CodeView inside it stay clear, so nothing stacks.
+    const clear = (v) => v === "rgba(0, 0, 0, 0)";
+    ok(!!got.frame && !clear(got.frame) && !/^rgb\(/.test(got.frame), "the frame root carries the alpha (" + got.frame + ")");
+    const stacked = ["body", "ground", "side", "page", "panel", "term", "xterm", "code", "cm", "gut"].filter((k) => !clear(got[k]));
+    ok(stacked.length === 0, "nothing above or inside the frame adds a second layer" + (stacked.length ? ": " + stacked.map((k) => k + "=" + got[k]).join(", ") : ""));
+    ok(/^rgb\(38, 38, 36\)$/.test(got.fdlg || ""), "a Dialog inside the frame stays solid (" + got.fdlg + ")");
     rmSync(d, { recursive: true });
   }
 }
@@ -216,7 +232,7 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
       fire: (e) => h[e] && h[e]() };
     return wc;
   };
-  const alphaOf = (css) => { const m = /--bg-200\) \/ ([\d.]+)\)/.exec(css); return m ? Number(m[1]) : null; };
+  const alphaOf = (css) => { const m = /\.dframe-root\{background-color:color-mix\(in srgb,var\(--cds-page-bg\) (\d+)%/.exec(css); return m ? Number(m[1]) / 100 : null; };
   const view = mk("https://claude.ai/new");
   live.events["web-contents-created"](null, view);
   view.fire("dom-ready");

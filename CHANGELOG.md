@@ -16,6 +16,17 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   tab 50/50 between the conversation and the panel, instead of upstream's own proportion or a split
   left over from earlier. A split you drag to is kept for every further panel until all are closed.
 
+### Transparent window: the Code tab is see-through too
+
+- The sidebar and the Code tab's File and Diff panels stayed nearly solid. The page wrapper and a
+  full-window wrapper around the app both took the transparency, and the sidebar and each panel added
+  one more layer on top, so they ended at about 99% opacity. The app frame is now the only see-through
+  layer, so the sidebar, the conversation and the panels all show the same transparency.
+- The File viewer's editor and line numbers and the Diff code view no longer paint their own dark
+  background.
+- The terminal stays solid: xterm draws it on a canvas that CSS cannot make see-through. Menus,
+  dialogs and Ctrl+P quick open stay solid on purpose.
+
 ## 2026-10-11
 
 ### Custom models: switching to a model with a minimum output length (thanks @rcdri, #272)
