@@ -205,7 +205,7 @@ Desktop automation (screenshot, click, type, scroll, teach mode), on for every a
 
 97 dual light/dark palettes (Catppuccin, Nord, Gruvbox, gaming themes, ...). Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> to pick one live. Theme files reload live, so [matugen](https://github.com/InioX/matugen), pywal or wallust can recolor the app from your wallpaper. Guide: [docs/themes.md](docs/themes.md), gallery: [themes/PALETTES.md](themes/PALETTES.md).
 
-![Mario theme - dark](themes/mario/2026-06-26_14-46-chat-dark.png)
+![Mario theme - dark](themes/mario/2026-10-12_19-46-home-dark.png)
 
 ## Multiple Profiles
 
