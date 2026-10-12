@@ -16,6 +16,16 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   tab 50/50 between the conversation and the panel, instead of upstream's own proportion or a split
   left over from earlier. A split you drag to is kept for every further panel until all are closed.
 
+### Extra settings pages
+
+- **Filters get the caret.** Themes, Community, Anthropic and Deployment open with the cursor in their
+  filter box, so you can start typing right away.
+- **Every restart row has its own "Restart now".** Hide window controls, Native titlebar, Transparent
+  window, Load large sessions in full and Allow non-Anthropic models now all show the button next to
+  their switch while a restart is owed. The two window modes used a bar at the top of the panel
+  instead, which was scrolled out of view by the time you flipped them; the other two rows had no
+  button at all.
+
 ### Transparent window: the Code tab is see-through too
 
 - The sidebar and the Code tab's File and Diff panels stayed nearly solid. The page wrapper and a

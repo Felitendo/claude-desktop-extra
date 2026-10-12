@@ -136,6 +136,19 @@
     while (node.firstChild) node.removeChild(node.firstChild);
   }
 
+  // A page with a filter opens ready to type into it. Deferred, because the
+  // input is usually appended before its panel is in the document; skipped when
+  // the panel has gone again, or when the user has already put the caret in
+  // another field (async pages build their filter late).
+  function focusFilter(search) {
+    setTimeout(function () {
+      if (!search.isConnected || search.offsetParent === null) return;
+      var a = document.activeElement;
+      if (a && a !== search && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+      try { search.focus({ preventScroll: true }); } catch (e) {}
+    }, 0);
+  }
+
   function area(node) {
     try {
       var r = node.getBoundingClientRect();
@@ -1086,6 +1099,13 @@
   // row and `lockedByJsonc` for the other, for no reason beyond the order they
   // were written in.
   //
+  // RESTART NOW. A row whose switch only takes effect after a restart passes
+  // spec.restartOwed(on, res): true while the saved switch differs from what the
+  // running app was started with. The row then carries a "Restart now" button
+  // next to its switch, shown exactly while that is true - so every restart row
+  // offers it in the same place, right where it was flipped, and a flip and a
+  // flip back take it away again.
+  //
   // Returns the two nodes it appended so the panel can filter over them, or
   // undefined when the row was skipped - callers must handle that.
   function renderToggleRow(panel, spec) {
@@ -1116,11 +1136,20 @@
     toggle.setAttribute("aria-label", spec.ariaLabel);
     toggle.disabled = true;
     aside.appendChild(toggle);
+    var restart = null;
+    if (typeof spec.restartOwed === "function" && typeof api.appRelaunch === "function") {
+      restart = restartButton();
+      restart.classList.add("cdbx-hide");
+      aside.insertBefore(restart, toggle);
+    }
 
     host.appendChild(node);
     panel.appendChild(host);
 
     function isOn() { return toggle.getAttribute("aria-checked") === "true"; }
+    function syncRestart(res) {
+      if (restart) restart.classList.toggle("cdbx-hide", !spec.restartOwed(isOn(), res));
+    }
 
     api[spec.read]().then(function (res) {
       if (failed(res)) {
@@ -1129,6 +1158,7 @@
       }
       function describe() { return spec.describe(isOn(), res); }
       toggle.setAttribute("aria-checked", spec.isOn(res) ? "true" : "false");
+      syncRestart(res);
 
       // A hand-edited .jsonc wins the startup merge, so the switch must not
       // pretend it can override it.
@@ -1152,6 +1182,7 @@
           if (failed(r)) { toast(spec.errorPrefix + reason(r), true); return; }
           toggle.setAttribute("aria-checked", next ? "true" : "false");
           stateLine.textContent = describe();
+          syncRestart(res);
           node.classList.add("cdbx-flash");
           setTimeout(function () { node.classList.remove("cdbx-flash"); }, 700);
           toast(spec.toast(next, r));
@@ -1325,7 +1356,7 @@
         "list. For 3P/gateway users who route to non-Anthropic models through their own gateway; " +
         "with it off, those routes are silently removed and the session falls back to the default " +
         "model. The setting is per mode: set it while in 3P mode, where it is saved in " +
-        "~/.config/Claude-3p. Applies on restart - the model list is built at startup.",
+        "~/.config/Claude-3p. Takes effect after a restart - the model list is built at startup.",
       ariaLabel: "allow non-Anthropic models from a third-party gateway in the model list",
       read: "allowNonAnthropicModelsRead",
       write: "allowNonAnthropicModelsSet",
@@ -1344,6 +1375,7 @@
         return pending ? "off - filtered to Anthropic models after a restart"
           : "off - the model list is filtered to Anthropic models";
       },
+      restartOwed: function (on, res) { return on !== (res.activeNow === true); },
       writeArg: function (next) { return next; },
       // r.pendingRestart is the main side's answer; only an explicit false (the
       // switch is back where the running app started) drops the restart wording.
@@ -1390,6 +1422,10 @@
         if (on) return pending ? "on - " + sizes + " after a restart" : "on - up to " + sizes;
         return pending ? "off - Anthropic's limits after a restart" : "off - Anthropic's limits";
       },
+      restartOwed: function (on, res) {
+        return on !== (res.activeNow === true) ||
+          (on && (res.mainMiB !== res.activeMainMiB || res.subagentMiB !== res.activeSubagentMiB));
+      },
       writeArg: function (next) { return next; },
       // r.pendingRestart is the main side's answer; only an explicit false (the
       // switch is back where the running app started) drops the restart wording.
@@ -1417,17 +1453,15 @@
   // apply live: frame and controls overlay are decided when the BrowserWindow
   // is constructed, and Electron 44 has no way back - setHasShadow(false) works
   // on a live window, but setTitleBarOverlay(false) throws and there is no
-  // setFrame at all. So every note and every toast here says "restart", and
-  // none of them pretends otherwise. renderToggleRow has no slot for a per-row
-  // button, which is why "Restart now" is a bar above the rows rather than a
-  // button on each - and a bar can say it once for both modes anyway.
+  // setFrame at all. So every note and every toast here says "restart", none
+  // of them pretends otherwise, and each row carries renderToggleRow's
+  // "Restart now" while its flip is still owed.
 
   // What the native titlebar pref last read as, and the read response of each
-  // row - kept because both of the cross-row jobs below outlive the moment
+  // row - kept because the cross-row override below outlives the moment
   // renderToggleRow hands a response over. null means "not known yet", which is
   // why describe() below stays neutral until it is: a state line must not claim
-  // an override it has not seen, and the restart bar must not appear over a
-  // disagreement nobody has established.
+  // an override it has not seen.
   var windowNative = null;
   var windowControlsRes = null;
   var windowNativeRes = null;
@@ -1462,8 +1496,7 @@
       // renders as off rather than claiming a feature that is not running.
       // Called once, with the read response - which linkWindowRows() needs
       // later than renderToggleRow keeps it, to rebuild this row's state line
-      // (lock suffix included) when the native switch moves, and to compare
-      // `active` against the switch for the restart bar.
+      // (lock suffix included) when the native switch moves.
       isOn: function (res) { windowControlsRes = res; return res.enabled === true; },
       // Reads the response out of windowControlsRes rather than its own second
       // argument, because linkWindowRows() rebuilds this line from outside too
@@ -1484,6 +1517,7 @@
         }
         return on ? "on - no window buttons, no frame" : "off - window buttons, integrated titlebar";
       },
+      restartOwed: windowRestartOwed,
       writeArg: function (next) { return next; },
       toast: function (next) {
         return next
@@ -1496,26 +1530,13 @@
 
   // The main window's see-through mode. The switch is constructor-only
   // (transparent cannot be flipped on a built window), so it says "restart" and,
-  // while a flip is still owed, carries its own "Restart now" next to the
-  // switch. The transparency slider below it is live:
+  // while a flip is still owed, carries "Restart now" next to the switch. The transparency slider below it is live:
   // windowTransparencyLevelPreview re-styles the window while it is dragged,
   // windowTransparencyLevelSet saves windowTransparencyLevel when it is
   // released. Blur is the compositor's job.
   function renderWindowTransparencyRow(panel) {
     var wtRes = null;
-    var restart = null;
     var slider = null;
-
-    // Owed a restart: the saved switch differs from what this window was built
-    // with. Not when nothing had been built yet (active not a boolean), not when
-    // CLAUDE_WINDOW_TRANSPARENCY decides every run anyway, and not for an "on"
-    // the native titlebar blocks - a restart closes none of those gaps.
-    function syncRestart(on) {
-      if (!restart) return;
-      var owed = !!wtRes && typeof wtRes.active === "boolean" && wtRes.envForced !== true &&
-        !(on && wtRes.nativeTitlebar === true) && on !== wtRes.active;
-      restart.classList.toggle("cdbx-hide", !owed);
-    }
 
     var row = renderToggleRow(panel, {
       section: "Window",
@@ -1537,10 +1558,7 @@
         if (slider) slider.load(res);
         return res.enabled === true;
       },
-      // Called on the read and after every successful flip, so it is also where
-      // the row's Restart now button follows the switch.
       describe: function (on, res) {
-        syncRestart(on);
         if (res && res.envForced === true) {
           return "decided for this run by CLAUDE_WINDOW_TRANSPARENCY - saved: " + (on ? "on" : "off");
         }
@@ -1550,6 +1568,11 @@
         var line = on ? "on - see-through main window" : "off - opaque window";
         if (res && typeof res.active === "boolean" && res.active !== on) line += " (restart to apply)";
         return line;
+      },
+      // The window-mode test, minus an "on" the native titlebar blocks - a
+      // restart would not close that gap either.
+      restartOwed: function (on, res) {
+        return windowRestartOwed(on, res) && !(on && res.nativeTitlebar === true);
       },
       writeArg: function (next) { return next; },
       toast: function (next) {
@@ -1562,12 +1585,6 @@
     if (!row) return row;
 
     var node = row.host.querySelector(".cdbx-row");
-    var aside = node && node.querySelector(".cdbx-row-aside");
-    if (aside && typeof api.appRelaunch === "function") {
-      restart = restartButton();
-      restart.classList.add("cdbx-hide");
-      aside.insertBefore(restart, aside.firstChild);
-    }
     var main = node && node.querySelector(".cdbx-row-main");
     if (main && typeof api.windowTransparencyLevelPreview === "function" &&
         typeof api.windowTransparencyLevelSet === "function") {
@@ -1696,7 +1713,7 @@
       lockFile: "claude-desktop-extra.jsonc",
       // Opt-in, and the value the row above reports its override from - so it is
       // recorded here, where it is first known, rather than read back out of the
-      // DOM. The whole response is kept for the restart bar's `active` half.
+      // DOM. The whole response is kept for nativeInForce()'s envForced half.
       isOn: function (res) {
         windowNativeRes = res;
         windowNative = res.enabled === true;
@@ -1708,6 +1725,7 @@
         }
         return on ? "on - system window frame" : "off - the titlebar is this app's own";
       },
+      restartOwed: windowRestartOwed,
       writeArg: function (next) { return next; },
       toast: function (next) {
         return next
@@ -1718,12 +1736,23 @@
     });
   }
 
-  // The "Restart now" button every restart notice in this file carries (and the
-  // Transparent window row, in its aside): app.relaunch() through the bridge,
-  // and the button back with a toast when that fails.
+  // restartOwed for the window-mode rows, whose read reports `active` - what
+  // this window was built with. Not owed when nothing had been built yet
+  // (active not a boolean), nor when a launcher flag / env var decides every
+  // run anyway: a restart cannot close that gap, so offering one would be a
+  // false promise.
+  function windowRestartOwed(on, res) {
+    return !!res && typeof res.active === "boolean" && res.envForced !== true && on !== res.active;
+  }
+
+  // The "Restart now" button of every restart row (renderToggleRow's
+  // restartOwed slot): app.relaunch() through the bridge, and the button back
+  // with a toast when that fails.
   function restartButton() {
     var restart = el("button", "cdbx-btn", "Restart now");
     restart.type = "button";
+    restart.title = "Relaunches the app directly, skipping your desktop launcher's systemd scope " +
+      "and environment - quitting and reopening from the launcher is the cleanest way";
     restart.addEventListener("click", function () {
       restart.disabled = true;
       restart.textContent = "Restarting...";
@@ -1742,47 +1771,20 @@
     return restart;
   }
 
-  // The restart bar for the two window modes, built the way the Deployment
-  // panel's is: created hidden and shown only while the window you are looking
-  // at and the setting on disk disagree. That is the only moment it means
-  // anything, and it is what makes flipping a switch and flipping it straight
-  // back take the bar away again instead of leaving a nag behind.
-  function renderWindowRestartBar(panel) {
-    if (!api || typeof api.appRelaunch !== "function") return null;
-
-    var notice = el("div", "cdbx-notice cdbx-info cdbx-hide");
-    notice.appendChild(el("div", "cdbx-notice-title", "Restart Claude Desktop to apply"));
-    notice.appendChild(el("div", "cdbx-notice-body",
-      "A window's frame is fixed when the window is created, so the window mode you just chose is " +
-      "saved but not running yet. Quitting and reopening from your desktop launcher is the cleanest " +
-      "way: \"Restart now\" relaunches the app directly and so skips the launcher's systemd scope " +
-      "and environment."));
-    var restart = restartButton();
-    notice.appendChild(restart);
-    panel.appendChild(notice);
-    return notice;
-  }
-
   // The cross-row wiring for the Window group. renderToggleRow renders each row
-  // on its own and only ever rewrites its OWN state line, so both of the things
-  // these two rows cannot say alone are done from the outside, on the nodes it
-  // hands back:
-  //   * the override. windowNative is filled in by the native row's isOn (and by
+  // on its own and only ever rewrites its OWN state line, so the one thing these
+  // two rows cannot say alone - the override - is done from the outside, on the
+  // nodes it hands back. windowNative is filled in by the native row's isOn (and by
   //     our own read below, in case that row is missing), so describe() can
   //     speak to it; every later move of the native switch - which
   //     renderToggleRow only sets after a write succeeds - is picked up and the
   //     other line rewritten. While native wins, the overridden switch is
   //     disabled, because flipping it would write a pref that changes nothing
   //     about the window you get.
-  //   * the restart bar, from `enabled` (what the next start will use) against
-  //     `active` (what this window was built with). `active` cannot change
-  //     without a restart, so it is taken from each row's read response and the
-  //     live half is read off the switch - which means a flip and a flip back
-  //     land back on "agrees" and take the bar down again.
   // Nothing here writes a pref: the three modes are resolved by the window
   // patch, this only reports it. A browser without MutationObserver gets the
   // one-shot version: correct on load, stale only after a flip.
-  function linkWindowRows(rows, bar) {
+  function linkWindowRows(rows) {
     var native = null;
     var controls = null;
     rows.forEach(function (row) {
@@ -1793,29 +1795,7 @@
     var toggle = controls ? controls.host.querySelector(".cdbx-switch") : null;
     var stateLine = controls ? controls.host.querySelector(".cdbx-state") : null;
     var nativeToggle = native ? native.host.querySelector(".cdbx-switch") : null;
-    // Either row alone is enough to owe a restart, so this is not "both or
-    // nothing" - but with neither there is nothing to wire up.
-    if (!toggle && !nativeToggle) return;
-
-    // A row is owed a restart when what the next start will use differs from
-    // what this window was built with. Three cases answer "no" before that
-    // comparison is even meaningful: no response; `active` not a boolean, which
-    // is "no window had been built when this was read" and so nothing to
-    // compare against; and envForced, where the launcher flag decides this run
-    // and would decide the next one exactly the same way - a restart cannot
-    // close that gap, so offering one would be a false promise. A bar nobody
-    // can justify is worse than no bar.
-    function pending(res, sw) {
-      if (!res || typeof res.active !== "boolean" || res.envForced === true) return false;
-      var next = sw ? sw.getAttribute("aria-checked") === "true" : res.enabled === true;
-      return next !== res.active;
-    }
-
-    function syncBar() {
-      if (!bar) return;
-      var owed = pending(windowControlsRes, toggle) || pending(windowNativeRes, nativeToggle);
-      bar.classList.toggle("cdbx-hide", !owed);
-    }
+    if (!toggle) return;
 
     function syncOverride() {
       // Not known yet, or this row's own read has not landed / has failed -
@@ -1850,14 +1830,9 @@
       if (toggle.title !== title) toggle.title = title;
     }
 
-    function sync() {
-      syncBar();
-      syncOverride();
-    }
-
     // The native row may be absent on a partially updated install (older
-    // preload, newer page) - then this read is the only source for its half of
-    // both jobs. It never overwrites what the row's own isOn already
+    // preload, newer page) - then this read is the only source for the
+    // override. It never overwrites what the row's own isOn already
     // established, so with the row present it cannot race it.
     if (api && typeof api.nativeTitlebarRead === "function") {
       api.nativeTitlebarRead().then(function (res) {
@@ -1865,7 +1840,7 @@
           windowNativeRes = res;
           windowNative = res.enabled === true;
         }
-        sync();
+        syncOverride();
       }, function () {});
     }
 
@@ -1880,7 +1855,7 @@
           windowNative = nativeToggle.getAttribute("aria-checked") === "true";
         }
       }
-      sync();
+      syncOverride();
     });
     // The native switch: its read filling in, and every successful flip after.
     if (nativeToggle) {
@@ -2091,6 +2066,7 @@
       search.type = "search";
       search.placeholder = "Filter " + result.entries.length + " themes";
       panel.appendChild(search);
+      focusFilter(search);
 
       var host = el("div", "cdbx-sections");
       panel.appendChild(host);
@@ -2213,7 +2189,7 @@
   // --- community features panel --------------------------------------------
   // Only our own switches live here, and all but the two window modes apply
   // live - which is why this panel has no standing restart notice, only the
-  // conditional bar the two window rows raise while the running window and the
+  // per-row "Restart now" each restart row shows while the running app and the
   // saved setting disagree. Anthropic's own flags, which always need a restart,
   // are a nav entry of their own and carry a permanent notice.
   //
@@ -2237,8 +2213,10 @@
   // native titlebar are all BrowserWindow constructor options, and Electron 44
   // has no live setter for any of them - setHasShadow(false) works, but
   // setTitleBarOverlay(false) throws and setFrame does not exist. So those two
-  // notes and toasts say "after a restart", and the restart bar below appears
-  // for exactly as long as that restart is still owed.
+  // notes and toasts say "after a restart", and each row's "Restart now"
+  // appears for exactly as long as that restart is still owed. The same goes for
+  // the transparent window, the transcript limits and the non-Anthropic models
+  // rows, which are read once at startup.
 
   var FEATURE_ROWS = [
     renderDiffViewsRow,
@@ -2265,11 +2243,6 @@
     search.type = "search";
     panel.appendChild(search);
 
-    // Above the rows, because it is the one thing here that is not a row and not
-    // filtered away when you type. Hidden until a window mode is actually owed a
-    // restart.
-    var restartBar = renderWindowRestartBar(panel);
-
     var rows = [];
     FEATURE_ROWS.forEach(function (render) {
       // renderToggleRow answers nothing when the bridge half of a row is missing
@@ -2280,11 +2253,12 @@
     // The two Window rows are three mutually exclusive modes and the only rows
     // that outlive a flip, so they are the one pair here that cannot report
     // itself row by row.
-    linkWindowRows(rows, restartBar);
+    linkWindowRows(rows);
     search.placeholder = "Filter " + rows.length + " features by name or description";
     // Nothing to filter is not a filter bar: an install whose preload predates
     // every one of these switches gets the explanation below instead.
     if (!rows.length) search.style.display = "none";
+    else focusFilter(search);
 
     var empty = el("div", "cdbx-empty", rows.length
       ? "No feature matches that filter."
@@ -3226,6 +3200,7 @@
       search.type = "search";
       search.placeholder = "Filter " + catalog.entries.length + " flags by id or description";
       panel.appendChild(search);
+      focusFilter(search);
 
       var list = el("div", "cdbx-list");
       panel.appendChild(list);
@@ -3706,6 +3681,7 @@
     search.type = "search";
     search.placeholder = "Filter keys";
     tools.appendChild(search);
+    focusFilter(search);
     var allBox = el("label", "cdbx-check");
     var allInput = el("input");
     allInput.type = "checkbox";

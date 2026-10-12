@@ -12,7 +12,7 @@
 
 **Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora/RHEL, NixOS and AppImage (plus our own `.deb`), with Linux-only extras on top:** [Computer Use](#computer-use), [custom themes](#custom-themes), [multiple profiles](#multiple-profiles), [Quick Entry](#quick-entry), and more under [Settings → Extra](#the-extra-settings).
 
-Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P inference - is the official upstream build. On Ubuntu 22.04+ / Debian 12+ you can also install [Anthropic's official `.deb`](https://code.claude.com/docs/en/desktop-linux) directly; use this project for the other distros or for the extras.
+Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P inference - is Anthropic's own build. New upstream releases reach you automatically through your package manager. On Ubuntu 22.04+ / Debian 12+ you can also install [Anthropic's official `.deb`](https://code.claude.com/docs/en/desktop-linux) directly; this package is the same app with [Linux fixes](docs/patches.md#linux-compatibility) and the extras above.
 
 ## Quick install
 
@@ -24,7 +24,7 @@ Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P inference - is th
 | NixOS / Nix | `nix run github:patrickjaja/claude-desktop-extra` |
 | Any distro | [AppImage from the latest release](https://github.com/patrickjaja/claude-desktop-extra/releases/latest) |
 
-Updates arrive through your package manager. x86_64 and aarch64 are supported everywhere except Nix (x86_64 only). **Cowork** (the agent VM) is optional and needs QEMU/KVM, see [Cowork setup](#cowork-setup-needs-devkvm). Details per distro:
+x86_64 and aarch64 are supported everywhere except Nix (x86_64 only). **Cowork** (the agent VM) is optional and needs QEMU/KVM, see [Cowork setup](#cowork-setup-needs-devkvm). Details per distro:
 
 <a name="arch-linux--manjaro-pacman-repository"></a>
 <details>
@@ -197,6 +197,18 @@ Settings → **Extra** holds everything this project adds, no config file or `su
 | ![Settings → Extra → Anthropic](docs/extra/anthropic-features.png) | ![Settings → Extra → Deployment](docs/extra/deployment.png) |
 </details>
 
+### The Code tab as an IDE
+
+Three Community switches, designed and built by [@dels07](https://github.com/dels07), make the Code tab work like VS Code:
+
+- **Files quick open** - <kbd>Ctrl</kbd>+<kbd>P</kbd> finds a file and opens it in the Files panel; `path:42` jumps to a line, and words match in any order (`user service` finds `user-service.spec.ts`).
+- **Panel tabs** - diff, terminal, browser and files open as tabs instead of a shrinking split; each gets the full width and keeps its state, <kbd>Ctrl</kbd>+<kbd>1</kbd>-<kbd>9</kbd> switches.
+- **Diff view modes** - the diff panel shows Working tree, Branch changes or Latest turn, against the branch you actually forked from, with expand/collapse all.
+
+Off by default; turn them on in Settings → Extra → Community. Details: [docs/code-tab.md](docs/code-tab.md).
+
+![Ctrl+P quick open over the Files panel, and the side panels as tabs](docs/code-tab/quick-open-and-panel-tabs.png)
+
 ## Computer Use
 
 Desktop automation (screenshot, click, type, scroll, teach mode), on for every account and every session type. The official build's own Linux Computer Use is a staged rollout that needs a RemoteDesktop portal (GNOME 46+, current Plasma) and skips wlroots; our bundled bridges take precedence and cover X11, XWayland, Sway / Hyprland / Niri, GNOME Wayland (PipeWire >= 1.0.5) and KDE Plasma 6.6+, with nothing to install. Details: [docs/computer-use.md](docs/computer-use.md), per-session matrix: [dependencies](docs/computer-use-dependencies.md).
@@ -205,7 +217,7 @@ Desktop automation (screenshot, click, type, scroll, teach mode), on for every a
 
 97 dual light/dark palettes (Catppuccin, Nord, Gruvbox, gaming themes, ...). Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> to pick one live. Theme files reload live, so [matugen](https://github.com/InioX/matugen), pywal or wallust can recolor the app from your wallpaper. Guide: [docs/themes.md](docs/themes.md), gallery: [themes/PALETTES.md](themes/PALETTES.md).
 
-![Mario theme - dark](themes/mario/2026-10-12_19-46-home-dark.png)
+![Final Fantasy theme - dark](themes/ff/2026-10-12_20-04-home-dark.png)
 
 ## Multiple Profiles
 
