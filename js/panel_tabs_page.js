@@ -378,41 +378,56 @@
   // none, and picking it with nothing remembered would leave no visible column at
   // all.
   //
-  // The one case that OVERRIDES the remembered tab is a column we have never
-  // tagged appearing while we were already running: that is a panel the user just
-  // opened, and leaving it hidden behind the previous tab would make opening a
-  // panel look like it did nothing. On the FIRST pass every column is untagged -
-  // that is adoption of the split that already exists, not an open - so the
-  // remembered tab wins there. `anyTagged` is what distinguishes the two.
+  // The one case that OVERRIDES the remembered tab is a column for a tile WE HAVE
+  // NEVER HAD A TAB FOR appearing while we were already running this session: that
+  // is a panel the user just opened, and leaving it hidden behind the previous tab
+  // would make opening a panel look like it did nothing. On the FIRST pass there is
+  // no tab set to compare against - that is adoption of the split that already
+  // exists, not an open - so the remembered tab wins there.
   //
-  // That override is additionally narrowed to a tile WE HAVE NEVER HAD A TAB FOR,
-  // which is what makes "untagged column" actually mean "just opened".
+  // "Already running" is decided from OUR OWN record (a non-empty prevTabs for this
+  // session), NOT from whether any resolved column still carries our tag. It used to
+  // be the tag. Measured live 2026-09-02 (1.40609.1): opening a second panel from
+  // upstream's own header button REBUILDS the side branch - the tile that was already
+  // open comes back as a brand-new, untagged wrapper inside a new stack, next to the
+  // new tile's - so on the pass that first saw the new column nothing was tagged,
+  // the pass looked exactly like first-pass adoption, and the remembered tab won: the
+  // new panel got a chip but stayed hidden. Upstream is free to throw our marks away
+  // on any re-render; what we remember, it cannot touch.
   //
-  // Measured live 2026-08-04: collapsing brings the other panes AND their column
-  // wrappers back as FRESH, untagged nodes - for tiles that had tabs all along - so
-  // without this narrowing every collapse handed the active tab to whichever
-  // remounted column came last in document order. That was observed directly: the
-  // active tab jumped terminal -> diff on a plain collapse.
+  // The tile-level narrowing is still load-bearing. Measured live 2026-08-04:
+  // collapsing brings the other panes AND their column wrappers back as FRESH,
+  // untagged nodes - for tiles that had tabs all along - so without it every collapse
+  // handed the active tab to whichever remounted column came last in document order.
+  // That was observed directly: the active tab jumped terminal -> diff on a plain
+  // collapse.
   //
   // `prevTabs` is the tab set of the last applied pass, replaced rather than
   // accumulated, so a tile that is closed is forgotten and REOPENING it (upstream
-  // reuses the id, e.g. "diff") counts as new again. "Not in the mirror yet" was
-  // tried first and is wrong: the mirror can have caught up before our tick, and
-  // then a genuinely just-opened panel would get a tab but never be revealed.
+  // reuses the id, e.g. "diff") counts as new again. It is keyed to the session it
+  // was recorded for: switching Code sessions re-renders a different tile set, every
+  // column untagged, and none of them "just opened" - so a record from another
+  // session counts as no record. "Not in the mirror yet" was tried first and is
+  // wrong: the mirror can have caught up before our tick, and then a genuinely
+  // just-opened panel would get a tab but never be revealed.
   var prevTabs = {};
+  var prevTabsSid = null;
+  var prevTabsCount = 0;
 
-  function pickActive(tabs, cols, stored) {
+  function pickActive(tabs, cols, stored, sid) {
     if (!tabs.length) return null;
     // A sticky sequence in flight makes the user's chosen tab authoritative. The
     // remount hands us untagged columns, and this is the belt to the braces above:
     // the switch the sequence exists to serve must not be hijacked by a heuristic.
     if (stickyPending && stored && tabs.indexOf(stored) !== -1) return stored;
-    var anyTagged = false, fresh = null, i;
-    for (i = 0; i < cols.length; i++) {
-      if (cols[i].wrapper.hasAttribute(COL_ATTR)) anyTagged = true;
-      else if (!prevTabs[cols[i].tileId]) fresh = cols[i].tileId;
+    var running = prevTabsSid === sid && prevTabsCount > 0;
+    var fresh = null, i;
+    if (running) {
+      for (i = 0; i < cols.length; i++) {
+        if (!prevTabs[cols[i].tileId]) fresh = cols[i].tileId;
+      }
     }
-    if (anyTagged && fresh) return fresh;
+    if (fresh) return fresh;
     if (stored && tabs.indexOf(stored) !== -1) return stored;
     // Nothing remembered: prefer a tab we can actually SHOW. A union tab has no
     // column, and choosing it would leave no visible side column at all.
@@ -420,10 +435,18 @@
     return tabs[0];
   }
 
-  function rememberTabs(tabs) {
+  function rememberTabs(sid, tabs) {
     var next = {}, i;
     for (i = 0; i < tabs.length; i++) next[tabs[i]] = true;
     prevTabs = next;
+    prevTabsSid = sid;
+    prevTabsCount = tabs.length;
+  }
+
+  function forgetTabs() {
+    prevTabs = {};
+    prevTabsSid = null;
+    prevTabsCount = 0;
   }
 
   // The active tab, preferring this page-life's own record over localStorage.
@@ -478,7 +501,7 @@
     var stored = storedActiveId(sid);
     return { sessionId: sid, root: root, cols: res.cols, sidePanes: res.sidePanes,
       expandedTileId: res.expandedTileId, tabs: tabs, stored: stored,
-      activeId: pickActive(tabs, res.cols, stored) };
+      activeId: pickActive(tabs, res.cols, stored, sid) };
   }
 
   // ---- structure: the ROW, the CHAIN, and what gets hidden -------------------
@@ -1168,7 +1191,7 @@
       // would hide the chat column.
       unarm();
       holdSince = 0;
-      rememberTabs(view.tabs);
+      rememberTabs(view.sessionId, view.tabs);
       return { action: "no-columns", wrote: 0, tabs: [], activeId: null };
     }
     var activeCol = colFor(view.cols, view.activeId);
@@ -1232,7 +1255,7 @@
     }
     // Recorded here and NOT on the "hold" path above: a hold is mid-sequence, and
     // forgetting a tab there would let the remount look like a fresh open.
-    rememberTabs(view.tabs);
+    rememberTabs(view.sessionId, view.tabs);
     return { action: "applied", wrote: 0, tabs: view.tabs, activeId: view.activeId,
       rowFound: !!struct.row, chainDepth: struct.chain.length, hidden: struct.hidden };
   }
@@ -1262,6 +1285,10 @@
     // previous life of the feature into the next one.
     stickyChat = null;
     structRefused = false;
+    // The tab-set memory too: re-enabling is adoption of whatever split exists by
+    // then, and a panel opened while the feature was off is part of that split, not
+    // a fresh open to reveal over the remembered tab.
+    forgetTabs();
     var st = document.querySelector("style[data-cdb-tabs]");
     if (st && st.parentNode) st.parentNode.removeChild(st);
     var de = document.documentElement;
