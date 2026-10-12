@@ -1,6 +1,6 @@
 # The Code tab as an IDE
 
-Three switches in Settings → Extra → **Community** make the Code tab work more like VS Code. All three were designed and built by [@dels07](https://github.com/dels07). Each is off by default, applies live, and switching it off leaves the Code tab exactly as Anthropic ships it.
+Three switches in Settings → Extra → **Community** make the Code tab work more like VS Code. Each is off by default, applies live, and switching it off leaves the Code tab exactly as Anthropic ships it.
 
 ![Ctrl+P quick open over the Files panel, and the side panels as tabs](code-tab/quick-open-and-panel-tabs.png)
 

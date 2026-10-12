@@ -199,7 +199,7 @@ Settings → **Extra** holds everything this project adds, no config file or `su
 
 ### The Code tab as an IDE
 
-Three Community switches, designed and built by [@dels07](https://github.com/dels07), make the Code tab work like VS Code:
+Three Community switches make the Code tab work like VS Code:
 
 - **Files quick open** - <kbd>Ctrl</kbd>+<kbd>P</kbd> finds a file and opens it in the Files panel; `path:42` jumps to a line, and words match in any order (`user service` finds `user-service.spec.ts`).
 - **Panel tabs** - diff, terminal, browser and files open as tabs instead of a shrinking split; each gets the full width and keeps its state, <kbd>Ctrl</kbd>+<kbd>1</kbd>-<kbd>9</kbd> switches.
