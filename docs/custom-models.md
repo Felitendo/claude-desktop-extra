@@ -15,7 +15,7 @@ This is not [third-party inference](third-party-inference.md), which replaces th
 
 **test** on a provider card sends a one-token request with the stored key, so a wrong URL or key shows up there rather than in a session.
 
-![Settings → Extra → Models](custom-models/models-page.png)
+![Settings → Extra → Models: a provider with one model, the switch at the top, and the web search and small / fast model settings below](extra/models.png)
 
 The feature is off by default. When it is off, the picker and every session behave exactly as Anthropic ships them.
 

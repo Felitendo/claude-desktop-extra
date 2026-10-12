@@ -23,6 +23,8 @@ All three write the same underlying schema; only the location and who may write 
 
 **Settings → Extra → Deployment** (added by this package - see [The "Extra" Settings](../README.md#the-extra-settings)).
 
+![Settings → Extra → Deployment: the 1P/3P switch, the active configuration and the third-party config keys](extra/deployment.png)
+
 1. **The mode switch** at the top shows what the running session is and what the next start will use. `1P` persists upstream's `deploymentMode` key, which is what lets a machine that already has a 3P config boot personal again; `3P` switches back. The mode is chosen in the bootstrap before any window exists, so the panel asks for a restart when the two disagree.
 2. **Pick a provider** under *Inference & connection*. The provider-specific fields (gateway URL and key, Vertex project and region, Bedrock region and profile, Foundry resource, …) appear once the provider is selected; "Show keys for every provider" reveals the rest.
 3. **Everything else is a toggle or a field**, grouped the way upstream's own schema groups it: surfaces and sandbox (Chat/Cowork/Code tabs, workspace folders, egress allowlist, disabled built-in tools), connectors and extensions, plugins, telemetry and updates, usage limits, branding, bootstrap. A key you never touch stays absent from the file, and Claude Desktop uses its own default.

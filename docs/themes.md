@@ -19,6 +19,8 @@ Every theme is **dual light/dark**: it ships a `light` and a `dark` palette, and
 
 Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> anywhere in the app. A searchable picker opens with every theme available to you, each card showing a dark and a light row of swatches; click one and it applies immediately in every open window, no restart and no config file. Your choice is saved to `claude-desktop-extra.jsonc` with any comments in it left intact. The same list is also in the app's Settings dialog under **Extra → Themes**, next to an **Extra → Anthropic Features** panel that exposes the [feature flags](feature-flags.md) as switches. Both places also show an **Overlay** bar when a [`themeOverlay`](#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust) is merged over your theme: it names the overlay, marks the active card with an `overlay` badge, and has a **Turn off** button; when none is active you can pick one of your own themes there and apply it, no config file needed.
 
+![Settings → Extra → Themes: the Overlay bar, your own themes, then the Gaming and Common sections](extra/themes.png)
+
 ## 2. Set it in the config file
 
 One line is enough, no `themes` block needed. The file is `~/.config/Claude/claude-desktop-extra.jsonc` (comments allowed), and every later step in this guide goes into the same file:

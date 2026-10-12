@@ -177,9 +177,25 @@ Check it with `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/gpg
 
 ## The "Extra" Settings
 
-Settings → **Extra** holds everything this project adds: **Themes**, **Community Features** (opt-in switches such as Files quick open, panel tabs, diff view modes, custom models), **Models** (the custom models editor), **Anthropic Features** (every upstream feature flag as a switch) and **Deployment** (1P/3P switch and the full third-party inference config, no `sudo` needed).
+Settings → **Extra** holds everything this project adds, no config file or `sudo` needed:
 
-![The Extra section in Claude's Settings](docs/global/2026-07-29_20-21-extra.png)
+- **[Themes](docs/themes.md)** - pick one of 97 palettes or your own, applied live.
+- **[Community](docs/patches.md#community-features)** - opt-in switches such as Files quick open, panel tabs, diff view modes and custom models.
+- **[Models](docs/custom-models.md)** - providers and models for the Code tab's model picker.
+- **[Anthropic](docs/feature-flags.md)** - every upstream feature flag as a switch.
+- **[Deployment](docs/third-party-inference.md#route-a-the-in-app-deployment-panel)** - the 1P/3P switch and the full third-party inference config.
+
+![The Extra section in Claude's Settings](docs/extra/extra-settings.png)
+
+<details>
+<summary><b>The other Extra pages</b></summary>
+
+| Themes | Models |
+|---|---|
+| ![Settings → Extra → Themes](docs/extra/themes.png) | ![Settings → Extra → Models](docs/extra/models.png) |
+| **Anthropic** | **Deployment** |
+| ![Settings → Extra → Anthropic](docs/extra/anthropic-features.png) | ![Settings → Extra → Deployment](docs/extra/deployment.png) |
+</details>
 
 ## Computer Use
 
