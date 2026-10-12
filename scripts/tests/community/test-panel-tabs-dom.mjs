@@ -733,6 +733,60 @@ const SINK = 'document.getElementById("__result").textContent = JSON.stringify';
   ok(Math.abs(r.dirtyGesture.chatShare - r.baseShare) < 1e-9,
      "drag: a gesture during which a branch appears is NOT treated as a clean drag - both signals are required, not either");
 }
+{
+  // FIRST OPEN IS A 50/50 SPLIT. Opening a panel when none is open lands at half the
+  // width, whatever share upstream's flexes or an earlier drag left behind.
+  const seed = `localStorage.setItem("cdb.panelTabs.v2", JSON.stringify({
+    version: 2, bySession: { local_a: { activeId: "diff", chatShare: 0.7 } } }));`;
+  const r = run(withPage(["chat"], `
+    var P = window.__cdbTabsPage;
+    P.setEnabled(true); P.reconcile();
+    var out = { emptyAction: P.reconcile().action };
+    // Upstream's chat<->side handle, which the drag below needs.
+    var h = document.createElement("div");
+    h.className = "tiles-handle"; h.setAttribute("role", "separator");
+    h.style.cssText = "flex:0 0 auto;width:12px";
+    document.getElementById("tile-host").appendChild(h);
+    window.__addCol("terminal", 1);
+    P.reconcile();
+    window.__mirror(["terminal"]);
+    P.reconcile();
+    out.first = P._flex();
+    out.stored = JSON.parse(localStorage.getItem("cdb.panelTabs.v2")).bySession.local_a;
+    out.chatW = Math.round(window.__col("chat").getBoundingClientRect().width);
+    out.sideW = Math.round(window.__col("terminal").getBoundingClientRect().width);
+    // A drag, then a SECOND panel: the user's chosen split is kept, not reset.
+    window.__col("chat").style.flex = "3 1 0%";
+    P._drag("down"); P._drag("up");
+    window.__addCol("diff", 1); window.__mirror(["terminal", "diff"]);
+    P.reconcile();
+    out.second = P._flex();
+    // A rebuild that shows ZERO columns for a pass while the mirror still lists panels
+    // is not "none open", so the next pass keeps the share too.
+    window.__dropCol("terminal"); window.__dropCol("diff");
+    P.reconcile();
+    window.__addCol("terminal", 1); window.__addCol("diff", 1);
+    P.reconcile();
+    out.rebuilt = P._flex();
+    // Closing everything (mirror empty too) re-arms it for the next open.
+    window.__dropCol("terminal"); window.__dropCol("diff"); window.__mirror([]);
+    P.reconcile();
+    window.__addCol("preview", 1); window.__mirror(["preview"]);
+    P.reconcile();
+    out.reopen = P._flex();
+    ${SINK}(out);`, { mirror: [], extraSetup: seed }), "flex-first-open-half");
+  ok(r.emptyAction === "no-columns", "first open: the page starts with no side panel");
+  ok(Math.abs(r.first.chatShare - 0.5) < 1e-9 && Math.abs(r.first.boundary - 0.5) < 1e-9,
+     "first open: the first panel opens at a 50% split, overriding the stored 0.7 and upstream's 2:1 flexes");
+  ok(Math.abs(r.stored.chatShare - 0.5) < 1e-9, "first open: the 50% split is persisted");
+  ok(Math.abs(r.chatW - r.sideW) <= 1, "first open: chat and the panel really measure the same width");
+  ok(Math.abs(r.second.chatShare - 0.75) < 1e-9,
+     "first open: a second panel keeps the split the user dragged to - only the first open resets it");
+  ok(Math.abs(r.rebuilt.chatShare - 0.75) < 1e-9,
+     "first open: a pass with zero columns while upstream's mirror still lists panels does not count as none open");
+  ok(Math.abs(r.reopen.chatShare - 0.5) < 1e-9,
+     "first open: after closing every panel, the next open lands at 50% again");
+}
 
 // --- never hide the chat column, never hide every side column -----------------
 {

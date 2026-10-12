@@ -413,6 +413,11 @@
   var prevTabs = {};
   var prevTabsSid = null;
   var prevTabsCount = 0;
+  // The session whose last pass had NO side panel, by the DOM and upstream's mirror
+  // alike. The next pass that finds one is a first open, which lands at a 50% split.
+  // shortcut: a reopen inside the mirror's ~1s debounce after closing the last panel keeps
+  // the old split; track upstream's close itself if that ever matters.
+  var emptySid = null;
 
   function pickActive(tabs, cols, stored, sid) {
     if (!tabs.length) return null;
@@ -447,6 +452,7 @@
     prevTabs = {};
     prevTabsSid = null;
     prevTabsCount = 0;
+    emptySid = null;
   }
 
   // The active tab, preferring this page-life's own record over localStorage.
@@ -499,7 +505,7 @@
     // for everything else (the ⤢ label, collapseIfExpanded, the hold's silence).
     var tabs = orderedTabs(sideIds, res.cols, !!res.expandedTileId || stickyPending);
     var stored = storedActiveId(sid);
-    return { sessionId: sid, root: root, cols: res.cols, sidePanes: res.sidePanes,
+    return { sessionId: sid, root: root, sideIds: sideIds, cols: res.cols, sidePanes: res.sidePanes,
       expandedTileId: res.expandedTileId, tabs: tabs, stored: stored,
       activeId: pickActive(tabs, res.cols, stored, sid) };
   }
@@ -787,6 +793,7 @@
   // a PROPORTION.
   //
   //   chatShare := chatFlex / (chatFlex + sideFlex)   captured, then HELD
+  //   (a FIRST open - no side panel before it - starts at 0.5 instead; see emptySid)
   //   sideFlex  := chatFlex * (1 - chatShare) / chatShare
   //
   // Since the hidden branches are display:none and contribute nothing, the two
@@ -817,8 +824,8 @@
   // element.style.flexGrow can never read our own value back. The mirror's
   // geometry() is the fallback.
   var shareMemo = {};
-  // Only reached when nothing can be captured either (no readable chat flex AND no
-  // readable branch flex), which means we know nothing about the split.
+  // The split a first open lands at (see emptySid), and the fallback when nothing can be
+  // captured (no readable chat flex AND no readable branch flex).
   var DEFAULT_SHARE = 0.5;
 
   function inlineFlex(el) {
@@ -1192,6 +1199,9 @@
       unarm();
       holdSince = 0;
       rememberTabs(view.sessionId, view.tabs);
+      // A rebuild can show zero columns for a pass while panels stay open; the mirror
+      // still lists them then, so it does not count as none open.
+      emptySid = view.sideIds.length ? null : view.sessionId;
       return { action: "no-columns", wrote: 0, tabs: [], activeId: null };
     }
     var activeCol = colFor(view.cols, view.activeId);
@@ -1238,6 +1248,8 @@
       else w.removeAttribute(ACTIVE_ATTR);
     }
     holdSince = 0;
+    if (emptySid === view.sessionId) shareMemo[view.sessionId] = DEFAULT_SHARE;
+    emptySid = null;
     var struct = applyStructure(view, activeCol);
     // Persisted when the active tab moved OR when the structural pass has just
     // CAPTURED a chat/side share that is not on disk yet - a reload must not jump
