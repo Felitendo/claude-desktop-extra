@@ -733,6 +733,60 @@ const SINK = 'document.getElementById("__result").textContent = JSON.stringify';
   ok(Math.abs(r.dirtyGesture.chatShare - r.baseShare) < 1e-9,
      "drag: a gesture during which a branch appears is NOT treated as a clean drag - both signals are required, not either");
 }
+{
+  // FIRST OPEN IS A 50/50 SPLIT. Opening a panel when none is open lands at half the
+  // width, whatever share upstream's flexes or an earlier drag left behind.
+  const seed = `localStorage.setItem("cdb.panelTabs.v2", JSON.stringify({
+    version: 2, bySession: { local_a: { activeId: "diff", chatShare: 0.7 } } }));`;
+  const r = run(withPage(["chat"], `
+    var P = window.__cdbTabsPage;
+    P.setEnabled(true); P.reconcile();
+    var out = { emptyAction: P.reconcile().action };
+    // Upstream's chat<->side handle, which the drag below needs.
+    var h = document.createElement("div");
+    h.className = "tiles-handle"; h.setAttribute("role", "separator");
+    h.style.cssText = "flex:0 0 auto;width:12px";
+    document.getElementById("tile-host").appendChild(h);
+    window.__addCol("terminal", 1);
+    P.reconcile();
+    window.__mirror(["terminal"]);
+    P.reconcile();
+    out.first = P._flex();
+    out.stored = JSON.parse(localStorage.getItem("cdb.panelTabs.v2")).bySession.local_a;
+    out.chatW = Math.round(window.__col("chat").getBoundingClientRect().width);
+    out.sideW = Math.round(window.__col("terminal").getBoundingClientRect().width);
+    // A drag, then a SECOND panel: the user's chosen split is kept, not reset.
+    window.__col("chat").style.flex = "3 1 0%";
+    P._drag("down"); P._drag("up");
+    window.__addCol("diff", 1); window.__mirror(["terminal", "diff"]);
+    P.reconcile();
+    out.second = P._flex();
+    // A rebuild that shows ZERO columns for a pass while the mirror still lists panels
+    // is not "none open", so the next pass keeps the share too.
+    window.__dropCol("terminal"); window.__dropCol("diff");
+    P.reconcile();
+    window.__addCol("terminal", 1); window.__addCol("diff", 1);
+    P.reconcile();
+    out.rebuilt = P._flex();
+    // Closing everything (mirror empty too) re-arms it for the next open.
+    window.__dropCol("terminal"); window.__dropCol("diff"); window.__mirror([]);
+    P.reconcile();
+    window.__addCol("preview", 1); window.__mirror(["preview"]);
+    P.reconcile();
+    out.reopen = P._flex();
+    ${SINK}(out);`, { mirror: [], extraSetup: seed }), "flex-first-open-half");
+  ok(r.emptyAction === "no-columns", "first open: the page starts with no side panel");
+  ok(Math.abs(r.first.chatShare - 0.5) < 1e-9 && Math.abs(r.first.boundary - 0.5) < 1e-9,
+     "first open: the first panel opens at a 50% split, overriding the stored 0.7 and upstream's 2:1 flexes");
+  ok(Math.abs(r.stored.chatShare - 0.5) < 1e-9, "first open: the 50% split is persisted");
+  ok(Math.abs(r.chatW - r.sideW) <= 1, "first open: chat and the panel really measure the same width");
+  ok(Math.abs(r.second.chatShare - 0.75) < 1e-9,
+     "first open: a second panel keeps the split the user dragged to - only the first open resets it");
+  ok(Math.abs(r.rebuilt.chatShare - 0.75) < 1e-9,
+     "first open: a pass with zero columns while upstream's mirror still lists panels does not count as none open");
+  ok(Math.abs(r.reopen.chatShare - 0.5) < 1e-9,
+     "first open: after closing every panel, the next open lands at 50% again");
+}
 
 // --- never hide the chat column, never hide every side column -----------------
 {
@@ -894,6 +948,70 @@ const SINK = 'document.getElementById("__result").textContent = JSON.stringify';
   ok(JSON.stringify(r.settledTabs) === '["diff","terminal"]' && r.settledActive === "terminal",
      "fresh column: nothing moves when the mirror catches up");
   ok(r.writes === 0, "fresh column: opening a panel makes us write nothing - upstream's opener did it all");
+}
+{
+  // MEASURED LIVE 2026-09-02 (1.40609.1): opening a SECOND panel from upstream's own
+  // header button REBUILDS the side branch. The tile that was already open comes back
+  // as a brand-new, untagged wrapper inside a new stack, next to the new tile's - so on
+  // the pass that first sees the new column NOTHING carries our tag. That is
+  // indistinguishable from first-pass adoption by "is anything tagged", and the
+  // remembered tab won: the new panel got a chip but stayed hidden behind the old one.
+  // Whether we are adopting or running has to come from what WE remember, not from
+  // marks upstream is free to throw away.
+  const r = run(withPage(["chat", "terminal"], `
+    var P = window.__cdbTabsPage;
+    P.setEnabled(true); P.reconcile();
+    var before = window.__activeCol();
+    window.__dropCol("terminal");             // upstream re-creates the existing tile's wrapper...
+    window.__addCol("terminal");
+    window.__addCol("diff");                  // ...alongside the new one; mirror NOT updated yet
+    var res = P.reconcile();
+    ${SINK}({ before: before, tabs: P.state().tabs, active: window.__activeCol(),
+      tagged: window.__taggedCols(), action: res.action, writes: window.__writes() });`),
+    "rebuilt-branch-open");
+  ok(r.before === "terminal", "rebuilt branch: the existing panel was the active tab before the open");
+  ok(JSON.stringify(r.tabs) === '["terminal","diff"]' && JSON.stringify(r.tagged) === '["terminal","diff"]',
+     "rebuilt branch: both the re-created and the new column get a tab and a tag");
+  ok(r.active === "diff",
+     "rebuilt branch: the panel the user just opened becomes active even though upstream re-created every wrapper");
+  ok(r.action === "applied" && r.writes === 0, "rebuilt branch: still zero layout writes");
+}
+{
+  // The flip side of trusting our own memory over upstream's marks: that memory is
+  // PER SESSION. Switching Code sessions re-renders every column untagged with a
+  // different tile set, and none of those tiles were "just opened" - the remembered
+  // tab for the incoming session must win, exactly as on a first pass.
+  const r = run(withPage(["chat", "terminal"], `
+    var P = window.__cdbTabsPage, S = window.__cdbTabsStore;
+    P.setEnabled(true); P.reconcile();
+    S.write("local_b", "diff", null, null);   // session B remembers diff
+    window.__mirror(["diff", "preview"], "local_b");
+    window.__dropCol("terminal");
+    window.__addCol("diff"); window.__addCol("preview");
+    P.reconcile();
+    ${SINK}({ sid: P.state().sessionId, tabs: P.state().tabs, active: window.__activeCol(),
+      writes: window.__writes() });`), "session-switch-adopts");
+  ok(r.sid === "local_b", "session switch: the page followed upstream's currentSessionId");
+  ok(JSON.stringify(r.tabs) === '["diff","preview"]', "session switch: the strip is the incoming session's tiles");
+  ok(r.active === "diff",
+     "session switch: the incoming session's remembered tab wins - its columns are not 'just opened' even though every one is untagged");
+  ok(r.writes === 0, "session switch: zero layout writes");
+}
+{
+  // Disable is a full teardown, and re-enable is adoption again: a panel opened while
+  // the feature was off is part of the split being adopted, not a fresh open, so the
+  // remembered tab is restored rather than overridden.
+  const r = run(withPage(["chat", "diff"], `
+    var P = window.__cdbTabsPage;
+    P.setEnabled(true); P.reconcile();
+    P.setEnabled(false);
+    window.__addCol("terminal"); window.__mirror(["diff", "terminal"]);
+    P.setEnabled(true); P.reconcile();
+    ${SINK}({ tabs: P.state().tabs, active: window.__activeCol(), writes: window.__writes() });`),
+    "reenable-adopts-opened-while-off");
+  ok(JSON.stringify(r.tabs) === '["diff","terminal"]', "re-enable: the panel opened while off is a tab");
+  ok(r.active === "diff", "re-enable: the remembered tab is restored - adoption, not a fresh open");
+  ok(r.writes === 0, "re-enable: zero layout writes");
 }
 {
   // Upstream unmounts every OTHER pane while one tile is expanded. Our own tag on

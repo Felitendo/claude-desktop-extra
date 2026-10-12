@@ -2,6 +2,20 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-12
+
+### Panel tabs
+
+- **Opening a panel switches to it.** Pressing Anthropic's Diff / Browser / Terminal header button
+  while another panel was showing added the new panel as a tab but left the old one in front. Opening
+  a second panel rebuilds the whole side region, so the reconciler mistook the pass for its first one
+  and restored the remembered tab. It now goes by its own per-session record of the tabs it last
+  showed, so a panel it has never shown becomes the active tab. Switching sessions and re-enabling the
+  feature still restore the remembered tab.
+- **The first panel opens at half the width.** Opening a panel when none is open now splits the Code
+  tab 50/50 between the conversation and the panel, instead of upstream's own proportion or a split
+  left over from earlier. A split you drag to is kept for every further panel until all are closed.
+
 ## 2026-10-11
 
 ### Custom models: switching to a model with a minimum output length (thanks @rcdri, #272)
