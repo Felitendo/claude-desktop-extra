@@ -50,7 +50,7 @@ function load(cfg, opts) {
   const sandbox = {
     require: (m) => Module.createRequire(import.meta.url)(m),
     process: { env, pid: 4242, execPath: "/usr/bin/node" },
-    fetch: rawFetch, Response, Headers, URL, Buffer, console, TextDecoder
+    fetch: rawFetch, Response, Headers, URL, Buffer, console, TextDecoder, TextEncoder, ReadableStream
   };
   if (opts && opts.Bun) sandbox.Bun = opts.Bun;
   sandbox.globalThis = sandbox;
@@ -773,6 +773,59 @@ const ANTHROPIC = "https://api.anthropic.com/v1/messages";
   ok(/<- anthropic\/claude-opus-5-5 usage: input=12 cache_read=180000 cache_write=900 \(1h 900, 5m 0\)/.test(text),
      "a streamed answer logs its usage from message_start, cache read and write included");
   ok(/<- anthropic\/claude-opus-5-5 usage: input=5 cache_read=0 cache_write=0\n/.test(text), "so does a JSON answer");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// --- a stream that mixes thinking into a text block -------------------------------
+// A LiteLLM-based gateway (GLM 5.3 on TensorX) streams reasoning as
+// thinking_delta inside a block opened as text; Claude Code refuses it and
+// resends the turn without streaming. The preload re-blocks it.
+{
+  const dir = mkdtempSync(join(tmpdir(), "cdb-cm-reblock-"));
+  const logPath = join(dir, "custom-models.log");
+  const E = (o) => "event: " + o.type + "\ndata: " + JSON.stringify(o) + "\n\n";
+  const zero = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const start = E({ type: "message_start", message: { id: "msg_x", type: "message", role: "assistant", content: [], usage: zero } });
+  const tail = E({ type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10364, output_tokens: 104 } }) + E({ type: "message_stop" });
+  const blk = (i, b) => E({ type: "content_block_start", index: i, content_block: b });
+  const dl = (i, d) => E({ type: "content_block_delta", index: i, delta: d });
+  const stp = (i) => E({ type: "content_block_stop", index: i });
+  const tool = (i) => blk(i, { type: "tool_use", id: "t1", name: "Edit", input: {} }) + dl(i, { type: "input_json_delta", partial_json: "{\"a\":1}" }) + stp(i);
+  const streamOf = (s, cut) => new Response(new ReadableStream({ start(c) { const b = new TextEncoder().encode(s);
+    for (let i = 0; i < b.length; i += cut) c.enqueue(b.slice(i, i + cut)); c.close(); } }), { status: 200, headers: { "content-type": "text/event-stream" } });
+  const shape = (text) => text.split("\n\n").filter(Boolean).map((e) => JSON.parse(e.split("\n").find((l) => l.startsWith("data:")).slice(5)))
+    .map((o) => o.type === "content_block_start" ? "start" + o.index + ":" + o.content_block.type
+      : o.type === "content_block_delta" ? o.delta.type.replace("_delta", "") + o.index
+      : o.type === "content_block_stop" ? "stop" + o.index : o.type).join(" ");
+  // thinking only, inside the text block (the commonest shape)
+  const mixed = start + blk(0, { type: "text", text: "" }) + dl(0, { type: "thinking_delta", thinking: "Fix" }) +
+    dl(0, { type: "thinking_delta", thinking: " mod1.py." }) + stp(0) + tool(1) + tail;
+  const clean = start + blk(0, { type: "text", text: "" }) + dl(0, { type: "text_delta", text: "" }) + stp(0) + tool(1) + tail;
+  // text, then thinking, then text again, all in block 0
+  const sandwich = start + blk(0, { type: "text", text: "" }) + dl(0, { type: "text_delta", text: "Let me look." }) +
+    dl(0, { type: "thinking_delta", thinking: "Read it." }) + dl(0, { type: "text_delta", text: " Now the edit." }) + stp(0) + tool(1) + tail;
+  const { hooked } = load(CONFIG, { env: { CDB_CUSTOM_MODELS_LOG: logPath },
+    responses: [streamOf(mixed, 7), streamOf(clean, 13), streamOf(sandwich, 50), streamOf(mixed, 4096)] });
+  const req = () => hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 10, stream: true, messages: [{ role: "user", content: "hi" }] }));
+  let out = await (await req()).text();
+  ok(shape(out) === "message_start start0:text stop0 start1:thinking thinking1 thinking1 stop1 start2:tool_use input_json2 stop2 message_delta message_stop",
+     "thinking deltas in a text block get a thinking block of their own, later blocks move up: " + shape(out));
+  ok(JSON.parse(out.split("\n\n").find((e) => e.includes("\"index\":1") && e.includes("content_block_start")).split("data: ")[1]).content_block.thinking === "" &&
+     out.includes("\"thinking\":\"Fix\"") && out.includes("\"partial_json\":\"{\\\"a\\\":1}\""), "with the reasoning and the tool input intact");
+  out = await (await req()).text();
+  ok(out === clean, "a stream without the mix reaches the CLI byte for byte");
+  out = await (await req()).text();
+  ok(shape(out) === "message_start start0:text text0 stop0 start1:thinking thinking1 stop1 start2:text text2 stop2 start3:tool_use input_json3 stop3 message_delta message_stop",
+     "text, thinking, text in one block become three blocks in that order: " + shape(out));
+  out = await (await req()).text();
+  ok(shape(out).startsWith("message_start start0:text stop0 start1:thinking"), "the same when the stream arrives in one chunk");
+  await new Promise((r) => setTimeout(r, 30));
+  const text = readFileSync(logPath, "utf8");
+  ok((text.match(/stream: thinking and text mixed in one block, re-blocked/g) || []).length === 3,
+     "each re-blocked answer is logged once, the clean one not: " + text);
+  ok(/usage: input=10364 output=104 \(end of stream, no cache figures sent\)/.test(text) && !/cache_read=0 cache_write=0\n[^\n]*re-blocked/.test(text) &&
+     !/usage: input=0 cache_read=0/.test(text),
+     "message_start counting nothing: the usage line comes from message_delta, and says it has no cache figures");
   rmSync(dir, { recursive: true, force: true });
 }
 

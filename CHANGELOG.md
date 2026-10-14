@@ -2,6 +2,22 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-14
+
+### Custom models: streams that put thinking inside a text block
+
+- **GLM 5.3 on TensorX no longer falls back to non-streaming** (8 of 19 and 4 of 14 streamed turns in two sessions). That
+  LiteLLM-based gateway streams the model's reasoning as `thinking_delta` events inside a block it
+  opened as `text`, sometimes with text again after it. Claude Code refuses such a stream ("Stream
+  event unreadable" in its debug log) and resends the whole turn without streaming, so the turn was
+  paid twice and took as long as the full answer. The preload now re-blocks the stream: each run of
+  thinking or text deltas gets its own block of that kind and the later blocks move up. A stream
+  without the mix reaches the CLI byte for byte. In a 9-turn Claude Code run on GLM 5.3, 3 streams
+  were re-blocked and none fell back; before, 4 of 14 fell back.
+- **A streamed answer's usage line no longer reads `input=0` on such gateways.** They count nothing in
+  `message_start` and send their totals in the final `message_delta`, without cache figures. The line
+  now comes from there and says that no cache figures were sent, instead of printing zeros.
+
 ## 2026-10-12
 
 ### Panel tabs (thanks @dels07, #274)
