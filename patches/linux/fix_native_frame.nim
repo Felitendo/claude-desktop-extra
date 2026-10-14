@@ -39,7 +39,12 @@
 # apply live: `setTitleBarOverlay(false)` throws and there is no `setFrame`, so
 # the settings rows tell the user a restart is needed.
 #
-# Why bare mode exists: on window managers where Chromium refuses to set
+# Since Electron 44.5.0 (electron#54391; bundled 44.7.0 from v2.37337.1)
+# Chromium no longer paints that border on these WMs - measured on xfwm4:
+# the window is exactly its content size with no _GTK_FRAME_EXTENTS - so bare
+# mode is now purely "no window-control buttons". History below.
+#
+# Why bare mode existed: on window managers where Chromium refused to set
 # _GTK_FRAME_EXTENTS - xfwm4 (hardcoded carve-out in X11Window::
 # CanSetDecorationInsets, see electron/electron#52024) and WMs that do not
 # advertise the hint at all (i3, Awesome) - Chromium paints a 4 px client-side

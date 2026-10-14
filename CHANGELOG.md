@@ -11,6 +11,16 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   Ctrl+C) left the app spinning at full CPU in an endless loop of failed GPU-process relaunches until
   it was force-killed. It now exits about 3 seconds after its quit cleanup instead. Quitting from the
   tray or closing the window was not affected.
+- **`fix_app_quit` no longer rewrites upstream's own quit.** Upstream's second `app.quit()` after its
+  quit cleanup ends the app on Linux (0.4 to 0.9 s, measured on v2.26454.0 through v2.37337.1), so the switch
+  to `app.exit(0)` is gone; the patch now carries only the 3-second backstop above.
+- **No more thin frame around the window on XFCE, i3 and Awesome.** The bundled Electron 44.7.0 no
+  longer paints its 4 px band inside frameless windows (measured on xfwm4: the window is exactly its
+  content size). Hide window controls is no longer needed for that; the docs now describe it only as
+  the switch that drops the window buttons.
+- **Extra -> Deployment shows when each setting became available.** 24 settings that the panel still
+  listed as "upstream gates this @next" now show the version that enabled them; the 10 that upstream
+  still holds back keep the note.
 - Two patches re-fitted, no behavior change. **Custom models:** upstream now builds the Code session
   env through a helper that applies managed proxy settings; our model variables go into that helper's
   input, so a managed proxy policy still applies on top. **Computer Use** (screenshot intro note):
