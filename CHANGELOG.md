@@ -6,6 +6,11 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ### Upstream v2.37337.1 (Electron 44.7.0)
 
+- **Logout and `systemctl stop` no longer stall for 90 seconds.** With the bundled Electron 44.7.0, a
+  stop signal sent to every app process at once (logout, `systemctl --user stop`, `pkill claude`,
+  Ctrl+C) left the app spinning at full CPU in an endless loop of failed GPU-process relaunches until
+  it was force-killed. It now exits about 3 seconds after its quit cleanup instead. Quitting from the
+  tray or closing the window was not affected.
 - Two patches re-fitted, no behavior change. **Custom models:** upstream now builds the Code session
   env through a helper that applies managed proxy settings; our model variables go into that helper's
   input, so a managed proxy policy still applies on top. **Computer Use** (screenshot intro note):
