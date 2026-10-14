@@ -339,7 +339,7 @@
     };
   }
 
-  // The managed-config key catalog of Claude Desktop v2.31226.0 (183 keys), read out of the
+  // The managed-config key catalog of Claude Desktop v2.37337.1 (184 keys), read out of the
   // bundle's own schema (flat key, zod leaf type, scopes, title). Upstream drives
   // its 3P Setup wizard from that schema; we cannot reach it from here (it is
   // module-scoped in index.pre.js), so this is a PINNED COPY and is therefore
@@ -579,8 +579,14 @@
     { key: "keepAwakeEnabled", kind: "bool", group: "sandbox", scope: "3p", dflt: true,
       label: "Allow keep awake",
       note: "Off means Claude never prevents sleep and hides the keep-awake switches in Settings, the Scheduled page and the Code tab; applies to a running app (upstream gates this @next)." },
+    { key: "developerModeEnabled", kind: "bool", group: "sandbox", scope: "both",
+      label: "Allow Developer Mode",
+      note: "Applies to a running app (upstream gates this @next)." },
     { key: "chatAdvancedFileAnalysisEnabled", kind: "bool", group: "sandbox", scope: "3p",
       label: "Advanced file analysis in Chat" },
+    { key: "chatAdvancedFileAnalysisNetworkEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Network access for file analysis",
+      note: "Lets Chat's file-analysis shell reach the hosts in the egress allowlist; needs Chat and advanced file analysis on (upstream gates this @next)." },
     { key: "autoModeEnabled", kind: "bool", group: "sandbox", scope: "3p", label: "Cowork Auto mode" },
     { key: "toolSearchEnabled", kind: "bool", group: "sandbox", scope: "3p", label: "Tool search" },
     { key: "allowedWorkspaceFolders", kind: "lines", group: "sandbox", scope: "both",
@@ -591,9 +597,6 @@
       label: "Disabled built-in tools", note: "One tool name per line, e.g. computer-use." },
     { key: "builtinToolPolicy", kind: "json", group: "sandbox", scope: "both",
       label: "Built-in tool policy", note: "JSON object of tool name to allow / ask / deny." },
-    { key: "toolPolicyRules", kind: "json", group: "sandbox", scope: "3p",
-      label: "Tool policy rules",
-      lock: "CEL rules applied only by a self-hosted session host and read only from configuration your bootstrap server serves; upstream ignores a value in device-managed or local settings, so this page never writes it" },
     { key: "toolPolicyEndpoint", kind: "json", group: "sandbox", scope: "3p",
       label: "Tool policy endpoint",
       lock: "asked only by a self-hosted session host and read only from configuration your bootstrap server serves; upstream ignores a value in device-managed or local settings, so this page never writes it" },

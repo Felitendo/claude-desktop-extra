@@ -617,8 +617,13 @@ proc apply*(input: string): string =
     # v1.32352.1: the minifier parenthesises arrow arguments -
     # `setTimeout((()=>v.abort()),or)` - so the wrapping parens around the
     # abort arrow are optional.
+    # v2.37337.1 folded those hoisted grant reads into a zero-arg closure
+    # (`,x=()=>{let e=[...ctx.getAllowedApps()],...;return{allowedApps:e,...}}`)
+    # that the options object spreads (`S={...x(),readTheGrantsAfresh:x,...`).
+    # Its body has braces and commas, so a hoisted decl may also be a
+    # `()=>{...}` arrow with at most one nested brace level.
     let seedPat =
-      re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,8000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=[^{},]{1,200})*,([\w$]+)=\{"""
+      re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,8000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=(?:[^{},]{1,200}|\(\)=>\{(?:[^{}]|\{[^{}]{0,400}\}){1,600}\}))*,([\w$]+)=\{"""
     let maybeSeed = content.find(seedPat)
     if maybeSeed.isNone:
       echo "  [FAIL] screenshot intro note: wrapper seed anchor not found"

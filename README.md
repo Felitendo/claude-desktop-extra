@@ -43,7 +43,7 @@ curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh 
 sudo pacman -Syu claude-desktop-extra
 ```
 
-**Optional deps** (not installed automatically): QEMU/KVM for Cowork ([setup](docs/cowork.md)), `bubblewrap` + `socat` (Claude Code shell sandbox), `nodejs` (system MCP servers), `gjs` (GNOME search provider), `claude-code`.
+**Optional deps** (not installed automatically): QEMU/KVM for Cowork ([setup](docs/cowork.md)), `bubblewrap` + `socat` (Claude Code shell sandbox), `openssh` (Claude Code SSH sessions over the system ssh client), `nodejs` (system MCP servers), `gjs` (GNOME search provider), `claude-code`.
 
 <details>
 <summary>Manual <code>pacman.conf</code> setup (without the install script)</summary>

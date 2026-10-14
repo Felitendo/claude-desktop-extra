@@ -11,7 +11,7 @@ rest on three kinds of assumptions:
   and the internals of the Claude Code binary. These break at run time. The log lines at the end say
   which one moved.
 
-Build-time anchors and local shapes re-measured on **v2.31226.0** (2026-10-09). The claude.ai rows were observed live on
+Build-time anchors and local shapes re-measured on **v2.37337.1** (2026-10-14). The claude.ai rows were observed live on
 2026-09-13 by the feature's author; the CLI rows were checked against **CLI 2.1.266** (2026-09-14/15) and
 re-read in **CLI 2.1.281** (2026-09-24) and **CLI 2.1.284** (2026-09-29); routing live-checked on **CLI 2.1.295** (2026-10-09).
 
@@ -19,21 +19,22 @@ re-read in **CLI 2.1.281** (2026-09-24) and **CLI 2.1.284** (2026-09-29); routin
 
 | Sub-patch | Anchor (exactly one across the staged bundle) | Rewritten to |
 |---|---|---|
-| B | `async buildSessionEnv(<id>,<n>,…){let <id>={...<n>.sessionEnv}` - the Code session manager copying the session env at every spawn (the spread must be of its 2nd parameter; trailing parameters may carry a default, `u=!1` since v2.26454.0) | `{...n.sessionEnv,...((globalThis.__cdbCustomModels&&…cliEnv(n.sessionEnv))\|\|{})}` |
+| B | `async buildSessionEnv(<id>,<n>,…){let <id>=await <h>(<n>.sessionEnv)` - the Code session manager deriving the session env at every spawn (the argument must be its 2nd parameter; trailing parameters may carry a default, `u=!1` since v2.26454.0; `<h>` is a cross-chunk helper, `t.cy` in v2.37337.1, that applies managed network/proxy env - before v2.37337.1 the site was a plain `{...<n>.sessionEnv}` copy) | the helper's argument becomes `{...n.sessionEnv,...((globalThis.__cdbCustomModels&&…cliEnv(n.sessionEnv))\|\|{})}`, so managed proxy policy still applies on top |
 | C | `appendSystemPrompt:this.initConfig?.appendSystemPrompt` and `agents:this.initConfig?.agents` in the Agent SDK's `Query.initialize` | each wrapped, with `this.transport` passed as the 2nd argument |
 | C (assert) | `{this.transport=<id>,this.isSingleUserTurn=` - the Query keeps its transport | nothing (precondition) |
 | C (assert) | `updateEnv(<id>){this.options.env?Object.assign(this.options.env,` - the transport keeps the spawn env in `options.env` | nothing (precondition) |
 | D | `async configureSSHSpawn(<ids>){` - the Code session manager turning a session into an SSH/WSL one | `remoteSpawn(<first param>)` called first |
 
-`rg` recipes: `rg -o 'buildSessionEnv\(.{0,80}' index*.js`, `rg -o 'subtype:"initialize".{0,600}' index*.js`,
+`rg` recipes: `grep -ao 'buildSessionEnv([^)]*){.\{0,60\}' index*.js`, `rg -o 'subtype:"initialize".{0,600}' index*.js`,
 `rg -o 'this\.transport=.{0,60}' index*.js`, `rg -o 'updateEnv\(.{0,80}' index*.js`,
 `rg -o 'configureSSHSpawn\(.{0,40}' index*.js` (add `-a`/use `grep -a` if the file has NUL bytes).
 
 ## Local shapes (not asserted - grep them)
 
-| Assumption | Where | Measured (v2.31226.0) | If it moves |
+| Assumption | Where | Measured (v2.37337.1) | If it moves |
 |---|---|---|---|
 | B's site is not the base env builder: `getBaseQueryConfig` memoises `_fetchBaseQueryConfig` for 30 s (`BASE_CONFIG_TTL_MS=3e4`) | `getBaseQueryConfig(e){return this.baseConfigMemo.get(…)}` | as quoted - a splice there reached new sessions up to 30 s late | nothing to do while B stays in `buildSessionEnv`; moving it back means calling `invalidateBaseConfigCache()` on every config change |
+| B's helper only touches network variables: it fills managed proxy/CA env the session lacks (`F9e`-style "set if absent") and enforces managed `HTTP(S)_PROXY`/`NO_PROXY` settings | `function <cy>(e){return <G>(e,{label:"[CCD] Code session"})}` -> `async function <G>(e,t){let n=new Set,r=<F>(await <pm>(),e,n);return await <W>(r,n,t.label),r}` | as quoted - none of `cliEnv()`'s keys (`BUN_OPTIONS`, `CDB_CUSTOM_MODELS_*`, `CLAUDE_CODE_SUBAGENT_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`) is touched | if the helper starts filtering or rewriting other keys, our additions could be dropped: move the splice after the call (`{...await <h>(…),...cliEnv(…)}`) |
 | The SDK copies the session env into the transport options | `…,at=le?{...le}:{...process.env};at.CLAUDE_CODE_ENTRYPOINT\|\|="sdk-ts"` before `new <Transport>({…env:at,…})` | as quoted | `sessionRouted()` sees no marker: sub-agent types and the announce line silently stop (routing is unaffected) |
 | The SSH/WSL remote spawner forwards only `CLAUDE_*`, `ANTHROPIC_*`, `DISABLE_*`, `ENABLE_TOOL_SEARCH` and host-authored keys | `function <id>(e){return e.startsWith("CLAUDE_")\|\|e.startsWith("ANTHROPIC_")\|\|e.startsWith("DISABLE_")\|\|e==="ENABLE_TOOL_SEARCH"…}` used by the remote env filter | as quoted: `CDB_*` (the keys) and `BUN_OPTIONS` never reach a remote host; `CLAUDE_CODE_SUBAGENT_MODEL` / `ANTHROPIC_SMALL_FAST_MODEL` would, which is why `remoteSpawn()` takes them back | if the filter widens, `remoteSpawn()` still strips everything `cliEnv()` added - nothing to do |
 | In subscription mode the app's model validator accepts any id (the blocklist of non-Anthropic names runs in 3P mode only) | the app-side validator behind `setAvailableCodeModels` | author, 2026-09-13 | a session refuses to start on a custom id |

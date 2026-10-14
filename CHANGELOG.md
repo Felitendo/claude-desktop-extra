@@ -4,6 +4,19 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-14
 
+### Upstream v2.37337.1 (Electron 44.7.0)
+
+- Two patches re-fitted, no behavior change. **Custom models:** upstream now builds the Code session
+  env through a helper that applies managed proxy settings; our model variables go into that helper's
+  input, so a managed proxy policy still applies on top. **Computer Use** (screenshot intro note):
+  upstream moved its grant lookups into a function that can re-read them.
+- **`openssh` is a new optional dependency** (Recommends on deb/rpm, optdepends on Arch), as in the
+  official `.deb`: Claude Code SSH sessions can use the system ssh client and fall back to the built-in
+  SSH engine without it.
+- Extra -> Deployment knows the two new managed settings `developerModeEnabled` and
+  `chatAdvancedFileAnalysisNetworkEnabled` and drops `toolPolicyRules`; the GrowthBook overrides
+  template lists the 33 new flags of this release.
+
 ### Custom models: Fetch models reads a gateway's model info (thanks @stratosjl, #276)
 
 - **A LiteLLM-based gateway's models arrive with their real window and capabilities.** When the list

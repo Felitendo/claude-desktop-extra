@@ -85,6 +85,9 @@ Recommends:     virtiofsd
 # toggle). Recommends, as the official .deb declares them.
 Recommends:     bubblewrap
 Recommends:     socat
+# Claude Code SSH sessions can use the system ssh client (the built-in SSH
+# engine is used without it). Recommends, as the official .deb declares it.
+Recommends:     openssh-clients
 # Computer Use is fully first-party now: bundled x11-bridge (X11/XWayland),
 # wlroots-bridge (Sway/Hyprland/Niri), gnome-portal-bridge (GNOME Wayland) and
 # kwin-portal-bridge (KDE Plasma 6.6+). Remaining Suggests cover only the
