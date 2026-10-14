@@ -526,12 +526,14 @@
   // so what the CLI reads is untouched; a stream up to message_start, or to
   // message_delta when message_start counts nothing (a LiteLLM-based gateway
   // sends zeros there and its totals at the end, without the cache split).
+  // Returns a function that stops reading the clone: the CLI cancelling its
+  // body reaches the provider only once both halves of the clone are let go.
   function logUsage(p, m, res) {
-    function line(u) {
+    function line(u, end) {
       if (!u || typeof u !== "object") return;
       // The end of a stream that states no cache figures: say so, rather
       // than print a cache_read=0 nobody measured.
-      if (u.cache_read_input_tokens === undefined && u.cache_creation_input_tokens === undefined && u.output_tokens !== undefined) {
+      if (end && u.cache_read_input_tokens === undefined && u.cache_creation_input_tokens === undefined) {
         log("<- " + p.id + "/" + m.id + " usage: input=" + (u.input_tokens || 0) + " output=" + (u.output_tokens || 0) +
           " (end of stream, no cache figures sent)");
         return;
@@ -546,9 +548,9 @@
       var type = (res.headers && res.headers.get("content-type")) || "";
       if (type.indexOf("text/event-stream") === -1) {
         copy.json().then(function (j) { line(j && j.usage); }, function () {});
-        return;
+        return function () {};
       }
-      if (!copy.body || typeof copy.body.getReader !== "function") return;
+      if (!copy.body || typeof copy.body.getReader !== "function") return function () {};
       var reader = copy.body.getReader(), dec = new TextDecoder(), buf = "", atStart = null;
       var stop = function () { reader.cancel().catch(function () {}); };
       var counted = function (u) {
@@ -571,7 +573,9 @@
               if (counted(su) || !su) { line(su); stop(); return; }
               atStart = su;
             } else if (ev && ev.type === "message_delta" && atStart) {
-              line(counted(ev.usage) ? ev.usage : atStart); atStart = null; stop(); return;
+              // Whatever the end counts beats the zeros of the start.
+              if (ev.usage && typeof ev.usage === "object") line(ev.usage, true); else line(atStart);
+              atStart = null; stop(); return;
             }
           }
           if (buf.length > 1000000) { stop(); return; }
@@ -579,7 +583,8 @@
         }, function () {});
       };
       pump();
-    } catch (e) {}
+      return stop;
+    } catch (e) { return function () {}; }
   }
 
   // A LiteLLM-based gateway serving a reasoning model (GLM 5.3 on TensorX,
@@ -593,7 +598,7 @@
   // kind, and the blocks after it move up by the ones inserted. A stream
   // without such a mix reaches the CLI as the provider sent it.
   var DELTA_KIND = { thinking_delta: "thinking", signature_delta: "thinking", text_delta: "text" };
-  function reblockStream(p, m, res) {
+  function reblockStream(p, m, res, stopUsage) {
     if (!res.body || typeof res.body.getReader !== "function" || typeof ReadableStream !== "function" ||
         typeof TextEncoder !== "function") return res;
     var type = (res.headers && res.headers.get("content-type")) || "";
@@ -664,9 +669,15 @@
         }
         return step();
       },
-      cancel: function (reason) { return reader.cancel(reason); }
+      cancel: function (reason) {
+        if (stopUsage) stopUsage();
+        return reader.cancel(reason);
+      }
     });
-    return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+    // The provider's length no longer holds once a block is split.
+    var headers = new Headers(res.headers);
+    headers.delete("content-length");
+    return new Response(body, { status: res.status, statusText: res.statusText, headers: headers });
   }
 
   function jsonResponse(status, obj) {
@@ -870,9 +881,9 @@
             ") - check it in Settings > Extra > Models. Provider said: " + t2.slice(0, 300));
         }
       } else if (!isCount) {
-        logUsage(p, m, res);
+        var stopUsage = logUsage(p, m, res);
         // Anthropic's own API streams well-formed blocks: left as it is.
-        if (!native && body.stream === true) res = reblockStream(p, m, res);
+        if (!native && body.stream === true) res = reblockStream(p, m, res, stopUsage);
       }
       return res;
     })();
