@@ -2,6 +2,20 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-14
+
+### Custom models: Fetch models reads a gateway's model info
+
+- **A LiteLLM-based gateway's models arrive with their real window and capabilities.** Such a gateway
+  lists bare OpenAI rows at `/v1/models` (`id`, `object`, `created`, `owned_by`), so every fetched
+  model was added with the defaults: a 1M window, vision and thinking on. Fetch models now also asks
+  the same host's `/v1/model/info`, for the gateway preset and for a provider with no preset, and only
+  when the list left a model's window unstated. `max_input_tokens` sets the window (1M only from 1M
+  up, so a 262k model compacts before the provider refuses it), `supports_vision` and
+  `supports_reasoning` set to false turn those off, and a model whose `mode` is not `chat` or
+  `responses` (embedding, speech, transcription) is left out of the checklist, with a note naming it.
+  A field the gateway does not state keeps the default; a host without the endpoint changes nothing.
+
 ## 2026-10-12
 
 ### Panel tabs (thanks @dels07, #274)

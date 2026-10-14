@@ -2045,6 +2045,34 @@
     });
     return { models: out, nextAfter: nextAfter };
   }
+  // A LiteLLM proxy (and a gateway built on one, such as TensorX) lists bare
+  // OpenAI rows at /v1/models - {id, object, created, owned_by} - and states
+  // what each model is at GET /v1/model/info: {data:[{model_name, model_info:
+  // {mode, max_input_tokens, supports_vision, supports_reasoning}}]}. Several
+  // rows can share a model_name (one per deployment): the first value stated
+  // for a field wins. Returns name -> {mode, maxInput, vision, reasoning}, or
+  // null when the answer is not that shape.
+  function parseModelInfo(text) {
+    var j;
+    try { j = JSON.parse(text); } catch (e) { return null; }
+    if (!j || !Array.isArray(j.data)) return null;
+    var out = Object.create(null), any = false;
+    j.data.forEach(function (row) {
+      if (!isObj(row) || typeof row.model_name !== "string" || !isObj(row.model_info)) return;
+      var mi = row.model_info;
+      var e = out[row.model_name] || (out[row.model_name] = {});
+      if (e.mode === undefined && typeof mi.mode === "string" && mi.mode) e.mode = mi.mode;
+      if (e.maxInput === undefined && typeof mi.max_input_tokens === "number" && mi.max_input_tokens > 0) e.maxInput = mi.max_input_tokens;
+      if (e.vision === undefined && typeof mi.supports_vision === "boolean") e.vision = mi.supports_vision;
+      if (e.reasoning === undefined && typeof mi.supports_reasoning === "boolean") e.reasoning = mi.supports_reasoning;
+      any = true;
+    });
+    return any ? out : null;
+  }
+  // The modes a Code session can run on. Anything else the gateway states
+  // (embedding, audio_transcription, audio_speech, image_generation, rerank,
+  // moderation...) would fail on the first turn, so it is not offered.
+  var SESSION_MODES = { chat: true, responses: true };
   _ipc.handle("cdb-cm:models-list", function (ev, providerId) {
     if (!okSender(ev)) return { ok: false, error: "rejected: unrecognized sender" };
     providerId = cleanString(providerId, 40);
@@ -2116,8 +2144,48 @@
         // Duplicates across pages (a gateway's alias rows) are dropped.
         var seenId = Object.create(null);
         var models = r.models.filter(function (m) { if (seenId[m.id]) return false; seenId[m.id] = true; return true; });
-        return { ok: true, source: url, models: models, partial: r.fail || null };
+        return withModelInfo(models).then(function (x) {
+          var out = { ok: true, source: url, models: x.models, partial: r.fail || null };
+          if (x.source) { out.infoSource = x.source; out.hidden = x.hidden; }
+          return out;
+        });
       });
+    }
+    // What the listing did not say, the gateway's /v1/model/info may: one GET
+    // on the same host, after the list. It only fills in - a context the
+    // listing stated is kept - and it only turns vision or thinking off when
+    // the gateway says false; an absent field keeps the app's default. Any
+    // failure leaves the list as it was. Asked only of the gateway preset and
+    // of a provider with no preset: the named presets are vendors' own APIs,
+    // which serve no such endpoint. Skipped too when the listing already
+    // stated every model's context (OpenRouter).
+    function withModelInfo(models) {
+      if (p.native || (p.preset && p.preset !== "gateway") || !origin ||
+          models.every(function (m) { return !!m.context; })) return Promise.resolve({ models: models });
+      var urls = [origin + "/v1/model/info"];
+      function next(i) {
+        if (i >= urls.length) return Promise.resolve({ models: models });
+        return getJson(urls[i], base).then(function (r) {
+          var info = r.ok ? parseModelInfo(r.text) : null;
+          if (!info) return next(i + 1);
+          var hidden = [];
+          var kept = models.filter(function (m) {
+            var e = info[m.id];
+            if (e && e.mode && !SESSION_MODES[e.mode]) { hidden.push({ id: m.id, mode: e.mode }); return false; }
+            return true;
+          }).map(function (m) {
+            var e = info[m.id];
+            if (!e) return m;
+            var c = Object.assign({}, m);
+            if (!c.context && e.maxInput !== undefined) c.context = e.maxInput >= 1000000 ? "1m" : "200k";
+            if (e.vision === false) c.vision = false;
+            if (e.reasoning === false) c.thinking = false;
+            return c;
+          });
+          return { models: kept, source: urls[i], hidden: hidden };
+        });
+      }
+      return next(0);
     }
     return tryNext(0, 0);
   });
