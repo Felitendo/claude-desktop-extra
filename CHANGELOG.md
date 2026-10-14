@@ -2,6 +2,16 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-14
+
+### Custom models: Fetch models reads a gateway's model info (thanks @stratosjl, #276)
+
+- **A LiteLLM-based gateway's models arrive with their real window and capabilities.** When the list
+  leaves a window unstated (gateway preset or no preset), Fetch models also reads the host's
+  `/v1/model/info`: `max_input_tokens` sets the window, `supports_vision` / `supports_reasoning` false
+  turn those off, and embedding, speech and transcription models are left out with a note. A host
+  without the endpoint, or a failed answer, leaves the list as it was.
+
 ## 2026-10-12
 
 ### Panel tabs (thanks @dels07, #274)

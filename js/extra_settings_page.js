@@ -2842,6 +2842,11 @@
       var box = el("div", "cdbx-models-fetched");
       box.appendChild(el("div", "cdbx-note", r.models.length + " model" + (r.models.length === 1 ? "" : "s") +
         " listed by " + r.source + ". Tick the ones to add."));
+      if (r.hidden && r.hidden.length) {
+        box.appendChild(el("div", "cdbx-note", r.hidden.length + " not listed: " + r.infoSource +
+          " says they are not chat models (" + r.hidden.slice(0, 10).map(function (x) { return x.id + ": " + x.mode; }).join(", ") +
+          (r.hidden.length > 10 ? ", ..." : "") + ")."));
+      }
       var have = Object.create(null);
       p.models.forEach(function (m) { have[m.id] = true; });
       var boxes = [];
@@ -2881,6 +2886,8 @@
           chain = chain.then(function () {
             var payload = { id: m.id, name: m.name && m.name !== m.id ? m.name : "" };
             if (m.context) payload.context = m.context; // the listing's context length, when it states one
+            if (m.vision === false) payload.vision = false; // the gateway's model info says no images
+            if (m.thinking === false) payload.thinking = false; // ... or no reasoning
             return api.customModelsModelSet(p.id, payload);
           });
         });
