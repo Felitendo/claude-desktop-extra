@@ -39,6 +39,7 @@ optdepends=('nodejs: System Node.js for MCP extensions that require specific ver
             'ydotool: Computer Use input on exotic Wayland compositors ONLY (non-wlroots, non-GNOME, non-KDE; requires ydotoold daemon, v1.0+) - wlroots/GNOME/KDE use the bundled bridges'
             'bubblewrap: Claude Code shell sandbox (needed with socat when an organization sandbox policy applies)'
             'socat: Claude Code shell sandbox (with bubblewrap); also a faster Quick Entry toggle via socket (~2ms vs ~25ms python3)'
+            'openssh: Claude Code SSH sessions over the system ssh client (without it the built-in SSH engine is used)'
             'bluez: Hardware Buddy (Nibblet BLE pet) - the daemon Web Bluetooth talks to; without it the in-app device scan finds nothing'
             'gnome-keyring: credential storage backend for libsecret (KDE users: kwallet works too - upstream Recommends gnome-keyring | kwalletd)'
             'xdg-desktop-portal-gtk: portal backend for DEs without their own (GNOME/KDE ship xdg-desktop-portal-gnome/-kde) - file dialogs, screen sharing'

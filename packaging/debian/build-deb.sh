@@ -224,6 +224,8 @@ INSTALLED_SIZE=$(du -sk "$DEB_ROOT" | cut -f1)
 # - bubblewrap + socat: the Claude Code shell sandbox (organization sandbox
 #   policy) needs both on Linux; socat also speeds up the Quick Entry toggle.
 #   Recommends, as upstream declares them.
+# - openssh-client: Claude Code SSH sessions can use the system ssh client
+#   (the built-in SSH engine is used without it). Recommends, as upstream.
 log_info "Creating control file..."
 cat > "$DEB_ROOT/DEBIAN/control" << EOF
 Package: claude-desktop-extra
@@ -233,7 +235,7 @@ Priority: optional
 Architecture: ${DEB_ARCH}
 Installed-Size: ${INSTALLED_SIZE}
 Depends: libgtk-3-0, libnotify4, libnss3, xdg-utils, libatspi2.0-0, libdrm2, libgbm1, libxcb-dri3-0, libsecret-1-0, kde-cli-tools | kde-runtime | trash-cli | libglib2.0-bin | gvfs, libc6 (>= 2.34), libxtst6, libuuid1, libpipewire-0.3-0, xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde
-Recommends: libasound2t64 | libasound2 | pulseaudio, libayatana-appindicator3-1 | libappindicator3-1, ca-certificates, gnome-keyring | plasma-workspace, libsecret-tools, bubblewrap, socat, ${COWORK_RECOMMENDS}
+Recommends: libasound2t64 | libasound2 | pulseaudio, libayatana-appindicator3-1 | libappindicator3-1, ca-certificates, gnome-keyring | plasma-workspace, libsecret-tools, bubblewrap, socat, openssh-client, ${COWORK_RECOMMENDS}
 Suggests: imagemagick, ydotool (>= 1.0), kde-spectacle, nodejs, bluez, gjs
 Conflicts: claude-desktop
 Replaces: claude-desktop, claude-desktop-bin (<< ${DEB_VERSION})

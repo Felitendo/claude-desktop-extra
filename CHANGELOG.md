@@ -4,19 +4,35 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-14
 
-### Custom models: streams that put thinking inside a text block
+### Upstream v2.37337.1 (Electron 44.7.0)
 
-- **GLM 5.3 on TensorX no longer falls back to non-streaming** (8 of 19 and 4 of 14 streamed turns in two sessions). That
-  LiteLLM-based gateway streams the model's reasoning as `thinking_delta` events inside a block it
-  opened as `text`, sometimes with text again after it. Claude Code refuses such a stream ("Stream
-  event unreadable" in its debug log) and resends the whole turn without streaming, so the turn was
-  paid twice and took as long as the full answer. The preload now re-blocks the stream: each run of
-  thinking or text deltas gets its own block of that kind and the later blocks move up. A stream
-  without the mix reaches the CLI byte for byte. In a 9-turn Claude Code run on GLM 5.3, 3 streams
-  were re-blocked and none fell back; before, 4 of 14 fell back.
-- **A streamed answer's usage line no longer reads `input=0` on such gateways.** They count nothing in
-  `message_start` and send their totals in the final `message_delta`, without cache figures. The line
-  now comes from there and says that no cache figures were sent, instead of printing zeros.
+- Two patches re-fitted, no behavior change. **Custom models:** upstream now builds the Code session
+  env through a helper that applies managed proxy settings; our model variables go into that helper's
+  input, so a managed proxy policy still applies on top. **Computer Use** (screenshot intro note):
+  upstream moved its grant lookups into a function that can re-read them.
+- **`openssh` is a new optional dependency** (Recommends on deb/rpm, optdepends on Arch), as in the
+  official `.deb`: Claude Code SSH sessions can use the system ssh client and fall back to the built-in
+  SSH engine without it.
+- Extra -> Deployment knows the two new managed settings `developerModeEnabled` and
+  `chatAdvancedFileAnalysisNetworkEnabled` and drops `toolPolicyRules`; the GrowthBook overrides
+  template lists the 33 new flags of this release.
+
+### Custom models: Fetch models reads a gateway's model info (thanks @stratosjl, #276)
+
+- **A LiteLLM-based gateway's models arrive with their real window and capabilities.** When the list
+  leaves a window unstated (gateway preset or no preset), Fetch models also reads the host's
+  `/v1/model/info`: `max_input_tokens` sets the window, `supports_vision` / `supports_reasoning` false
+  turn those off, and embedding, speech and transcription models are left out with a note. A host
+  without the endpoint, or a failed answer, leaves the list as it was.
+
+### Custom models: streams that put thinking inside a text block (thanks @stratosjl, #277)
+
+- **GLM 5.3 on TensorX no longer falls back to non-streaming.** That LiteLLM-based gateway streams
+  reasoning as `thinking_delta` inside a block opened as `text`; Claude Code refused the stream and
+  resent the whole turn without streaming, paying for it twice. The preload now gives each run of
+  thinking or text its own block and moves the later blocks up; a stream without the mix is untouched.
+- **The usage line of such a stream** comes from the final `message_delta` when `message_start`
+  counts nothing, marked `(end of stream, no cache figures sent)` instead of printing zeros.
 
 ## 2026-10-12
 
