@@ -25,6 +25,15 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   turn those off, and embedding, speech and transcription models are left out with a note. A host
   without the endpoint, or a failed answer, leaves the list as it was.
 
+### Custom models: streams that put thinking inside a text block (thanks @stratosjl, #277)
+
+- **GLM 5.3 on TensorX no longer falls back to non-streaming.** That LiteLLM-based gateway streams
+  reasoning as `thinking_delta` inside a block opened as `text`; Claude Code refused the stream and
+  resent the whole turn without streaming, paying for it twice. The preload now gives each run of
+  thinking or text its own block and moves the later blocks up; a stream without the mix is untouched.
+- **The usage line of such a stream** comes from the final `message_delta` when `message_start`
+  counts nothing, marked `(end of stream, no cache figures sent)` instead of printing zeros.
+
 ## 2026-10-12
 
 ### Panel tabs (thanks @dels07, #274)
