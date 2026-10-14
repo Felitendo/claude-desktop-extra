@@ -2844,7 +2844,8 @@
         " listed by " + r.source + ". Tick the ones to add."));
       if (r.hidden && r.hidden.length) {
         box.appendChild(el("div", "cdbx-note", r.hidden.length + " not listed: " + r.infoSource +
-          " says they are not chat models (" + r.hidden.map(function (x) { return x.id + ": " + x.mode; }).join(", ") + ")."));
+          " says they are not chat models (" + r.hidden.slice(0, 10).map(function (x) { return x.id + ": " + x.mode; }).join(", ") +
+          (r.hidden.length > 10 ? ", ..." : "") + ")."));
       }
       var have = Object.create(null);
       p.models.forEach(function (m) { have[m.id] = true; });

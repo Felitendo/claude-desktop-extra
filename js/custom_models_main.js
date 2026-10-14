@@ -2160,32 +2160,29 @@
     // which serve no such endpoint. Skipped too when the listing already
     // stated every model's context (OpenRouter).
     function withModelInfo(models) {
+      var asIs = { models: models };
       if (p.native || (p.preset && p.preset !== "gateway") || !origin ||
-          models.every(function (m) { return !!m.context; })) return Promise.resolve({ models: models });
-      var urls = [origin + "/v1/model/info"];
-      function next(i) {
-        if (i >= urls.length) return Promise.resolve({ models: models });
-        return getJson(urls[i], base).then(function (r) {
-          var info = r.ok ? parseModelInfo(r.text) : null;
-          if (!info) return next(i + 1);
-          var hidden = [];
-          var kept = models.filter(function (m) {
-            var e = info[m.id];
-            if (e && e.mode && !SESSION_MODES[e.mode]) { hidden.push({ id: m.id, mode: e.mode }); return false; }
-            return true;
-          }).map(function (m) {
-            var e = info[m.id];
-            if (!e) return m;
-            var c = Object.assign({}, m);
-            if (!c.context && e.maxInput !== undefined) c.context = e.maxInput >= 1000000 ? "1m" : "200k";
-            if (e.vision === false) c.vision = false;
-            if (e.reasoning === false) c.thinking = false;
-            return c;
-          });
-          return { models: kept, source: urls[i], hidden: hidden };
+          models.every(function (m) { return !!m.context; })) return Promise.resolve(asIs);
+      var infoUrl = origin + "/v1/model/info";
+      return getJson(infoUrl, base).then(function (r) {
+        var info = r.ok ? parseModelInfo(r.text) : null;
+        if (!info) return asIs;
+        var hidden = [];
+        var kept = models.filter(function (m) {
+          var e = info[m.id];
+          if (e && e.mode && !SESSION_MODES[e.mode]) { hidden.push({ id: m.id, mode: e.mode }); return false; }
+          return true;
+        }).map(function (m) {
+          var e = info[m.id];
+          if (!e) return m;
+          var c = Object.assign({}, m);
+          if (!c.context && e.maxInput !== undefined) c.context = e.maxInput >= 1000000 ? "1m" : "200k";
+          if (e.vision === false) c.vision = false;
+          if (e.reasoning === false) c.thinking = false;
+          return c;
         });
-      }
-      return next(0);
+        return { models: kept, source: infoUrl, hidden: hidden };
+      }).catch(function () { return asIs; }); // e.g. the body cut off by the 15 s abort
     }
     return tryNext(0, 0);
   });

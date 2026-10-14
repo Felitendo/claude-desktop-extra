@@ -4,17 +4,13 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-14
 
-### Custom models: Fetch models reads a gateway's model info
+### Custom models: Fetch models reads a gateway's model info (thanks @stratosjl, #276)
 
-- **A LiteLLM-based gateway's models arrive with their real window and capabilities.** Such a gateway
-  lists bare OpenAI rows at `/v1/models` (`id`, `object`, `created`, `owned_by`), so every fetched
-  model was added with the defaults: a 1M window, vision and thinking on. Fetch models now also asks
-  the same host's `/v1/model/info`, for the gateway preset and for a provider with no preset, and only
-  when the list left a model's window unstated. `max_input_tokens` sets the window (1M only from 1M
-  up, so a 262k model compacts before the provider refuses it), `supports_vision` and
-  `supports_reasoning` set to false turn those off, and a model whose `mode` is not `chat` or
-  `responses` (embedding, speech, transcription) is left out of the checklist, with a note naming it.
-  A field the gateway does not state keeps the default; a host without the endpoint changes nothing.
+- **A LiteLLM-based gateway's models arrive with their real window and capabilities.** When the list
+  leaves a window unstated (gateway preset or no preset), Fetch models also reads the host's
+  `/v1/model/info`: `max_input_tokens` sets the window, `supports_vision` / `supports_reasoning` false
+  turn those off, and embedding, speech and transcription models are left out with a note. A host
+  without the endpoint, or a failed answer, leaves the list as it was.
 
 ## 2026-10-12
 

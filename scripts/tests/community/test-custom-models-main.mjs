@@ -738,8 +738,48 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
     ? new Response(JSON.stringify(gwList), { status: 200 }) : new Response("<html>not json</html>", { status: 200 }));
   r = await h["cdb-cm:models-list"](okSenderEv, "gw");
   ok(r.ok === true && r.models.length === 8 && !("hidden" in r), "a /v1/model/info answer that is not that shape is ignored");
+  // The info body cut off mid-read (the 15 s abort): the list is kept.
+  sandbox.__fetchImpl = (url) => Promise.resolve(url === "https://gw.example/v1/models"
+    ? new Response(JSON.stringify(gwList), { status: 200 })
+    : { status: 200, ok: true, headers: new Headers(), text: () => Promise.reject(Object.assign(new Error("aborted"), { name: "AbortError" })) });
+  r = await h["cdb-cm:models-list"](okSenderEv, "gw").catch((e) => ({ threw: e.message }));
+  ok(r.ok === true && r.models.length === 8 && !("hidden" in r), "a /v1/model/info body that fails to arrive leaves the list as it was: " + JSON.stringify(r).slice(0, 200));
+  // A redirect off the host: the key is not carried along, the list is kept.
+  // The stub follows the redirect itself, as fetch does, unless the request
+  // asks for redirect: "manual".
+  sandbox.__fetchCalls.length = 0;
+  sandbox.__fetchImpl = (url, init) => {
+    if (url === "https://gw.example/v1/models") return Promise.resolve(new Response(JSON.stringify(gwList), { status: 200 }));
+    if (url !== "https://gw.example/v1/model/info") return Promise.resolve(new Response("nope", { status: 404 }));
+    if (init && init.redirect === "manual") return Promise.resolve(new Response("", { status: 302, headers: { location: "https://elsewhere.example/v1/model/info" } }));
+    sandbox.__fetchCalls.push({ url: "https://elsewhere.example/v1/model/info", init });
+    return Promise.resolve(new Response(JSON.stringify(gwInfo), { status: 200 }));
+  };
+  r = await h["cdb-cm:models-list"](okSenderEv, "gw").catch((e) => ({ threw: e.message }));
+  ok(r.ok === true && r.models.length === 8 && !("hidden" in r) && !sandbox.__fetchCalls.some((c) => c.url.indexOf("elsewhere.example") !== -1),
+     "a /v1/model/info redirect to another host is not followed: " + sandbox.__fetchCalls.map((c) => c.url).join(" "));
+  // Every model's context already listed (OpenRouter): no /v1/model/info.
+  sandbox.__fetchCalls.length = 0;
+  sandbox.__fetchImpl = (url) => Promise.resolve(url === "https://gw.example/v1/models"
+    ? new Response(JSON.stringify({ data: [{ id: "a", context_length: 200000 }, { id: "b", context_length: 1000000 }] }), { status: 200 })
+    : new Response(JSON.stringify(gwInfo), { status: 200 }));
+  r = await h["cdb-cm:models-list"](okSenderEv, "gw");
+  ok(r.ok === true && r.models.length === 2 && sandbox.__fetchCalls.length === 1 && !("infoSource" in r),
+     "a list that states every model's context is not completed from /v1/model/info: " + sandbox.__fetchCalls.map((c) => c.url).join(" "));
   r = await h["cdb-cm:provider-delete"](okSenderEv, "gw");
   ok(r.ok === true, "the gateway provider is removed again");
+  // Anthropic's own API serves no /v1/model/info: not asked.
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "antinfo", baseUrl: "https://api.anthropic.com", apiKey: "sk-ant-api-1234567890" });
+  ok(r.ok === true, "an Anthropic API provider is saved: " + JSON.stringify(r).slice(0, 200));
+  sandbox.__fetchCalls.length = 0;
+  sandbox.__fetchImpl = (url) => Promise.resolve(url.indexOf("/v1/models") !== -1
+    ? new Response(JSON.stringify({ data: [{ id: "claude-x", display_name: "X" }] }), { status: 200 })
+    : new Response(JSON.stringify(gwInfo), { status: 200 }));
+  r = await h["cdb-cm:models-list"](okSenderEv, "antinfo");
+  ok(r.ok === true && r.models.length === 1 && !sandbox.__fetchCalls.some((c) => c.url.indexOf("/v1/model/info") !== -1),
+     "Anthropic's API is not asked for /v1/model/info: " + sandbox.__fetchCalls.map((c) => c.url).join(" "));
+  r = await h["cdb-cm:provider-delete"](okSenderEv, "antinfo");
+  ok(r.ok === true, "the Anthropic API provider is removed again");
   sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ id: "msg" }), { status: 200 }));
 
   // The connectivity test: a minimal request to the first model with the stored key.
