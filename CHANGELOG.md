@@ -11,6 +11,15 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   nixpkgs so `electron_44` stays available after nixpkgs drops it. Release builds only touch
   `packaging/nix/package.nix`, so version bumps leave the lock alone; `nix flake update` refreshes it.
 
+### Release CI installs every release the way users do
+
+- **Each release is now installed from its published channels before it counts as done.** After
+  publishing, CI runs the README's own install commands in fresh containers: the apt repo on Ubuntu
+  22.04, 24.04 and Debian 12, the dnf repo on current Fedora and Rocky Linux 9, the pacman repo and
+  the AUR on Arch, and `nix run github:...`. Each must install the release just published. The package
+  tests only ever installed the freshly built files, which is how the missing `flake.lock` went
+  unnoticed. A failing channel comments on the release's tracking issue.
+
 ## 2026-10-14
 
 ### Upstream v2.37337.1 (Electron 44.7.0)
