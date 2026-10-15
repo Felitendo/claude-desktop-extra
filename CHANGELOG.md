@@ -2,6 +2,15 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-15
+
+### Nix: `flake.lock` is committed (thanks @sophietelle, #278)
+
+- **`nix run github:patrickjaja/claude-desktop-extra` works again.** Without a lock file in the repo,
+  current Nix stopped with "cannot write modified lock file". The flake now ships one, which also pins
+  nixpkgs so `electron_44` stays available after nixpkgs drops it. Release builds only touch
+  `packaging/nix/package.nix`, so version bumps leave the lock alone; `nix flake update` refreshes it.
+
 ## 2026-10-14
 
 ### Upstream v2.37337.1 (Electron 44.7.0)
