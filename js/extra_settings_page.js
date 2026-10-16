@@ -1347,6 +1347,35 @@
   // read response carries what the RUNNING app started with (activeNow) next to
   // the saved value, so describe() says "after a restart" exactly while they
   // differ - the same arrangement as the transcript limits row below.
+  function renderDevToolsRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Developer",
+      title: "Developer tools",
+      note: "Lets Ctrl+Alt+I open Chromium DevTools for the focused window, and shows \"Toggle Dev " +
+        "Tools\" in the app menu. Writes the official build's own opt-in file, developer_settings.json " +
+        "in the profile directory, which the app re-reads on every shortcut press - so the shortcut works " +
+        "right away; the menu entry appears after a restart. An organization that disabled developer " +
+        "mode for its workspace keeps DevTools off regardless.",
+      ariaLabel: "allow developer tools (Ctrl+Alt+I)",
+      read: "devToolsRead",
+      write: "devToolsSet",
+      lockFile: "developer_settings.json",
+      // Opt-in: only an explicit true is on, exactly like upstream's own check.
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) {
+        return on ? "on - Ctrl+Alt+I opens DevTools"
+          : "off - DevTools stay disabled, as in the official build";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next, r) {
+        var label = next ? "Developer tools allowed - Ctrl+Alt+I opens them"
+          : "Developer tools disabled";
+        return r && r.replacedInvalid ? label + " (replaced an unreadable developer_settings.json)" : label;
+      },
+      errorPrefix: "Could not change the developer tools setting: "
+    });
+  }
+
   function renderAllowNonAnthropicModelsRow(panel) {
     return renderToggleRow(panel, {
       section: "Inference",
@@ -2229,7 +2258,8 @@
     renderNativeTitlebarRow,
     renderWindowTransparencyRow,
     renderGlowRow,
-    renderThemePickerRow
+    renderThemePickerRow,
+    renderDevToolsRow
   ];
 
   function renderFeatures(panel) {

@@ -2,6 +2,27 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-16
+
+### Menus in popped-out session windows work while the main window is hidden (#280)
+
+- **On native Wayland, menus in a popped-out Code session no longer get stuck.** With the main window on
+  another workspace (sway, and any compositor that stops drawing hidden windows), menus and dropdowns in a
+  session window opened with "Open in new window" stopped closing, or did not open, until the main window
+  was shown again. The session window's UI runs in the main window, which receives no animation frames at
+  all while the compositor hides it (electron/electron#53814; `backgroundThrottling` cannot help). The main
+  window's `requestAnimationFrame` now also advances on a 100 ms timer when no frame arrives, so a visible
+  main window behaves exactly as before. X11 and XWayland sessions are untouched; `CDB_POPOUT_RAF_SHIM=0`
+  turns the fix off.
+
+### Developer tools switch in Settings -> Extra (community)
+
+- **DevTools can be enabled from the Extra page.** The official build only opens DevTools (Ctrl+Alt+I,
+  "Toggle Dev Tools" in the app menu) with `allowDevTools: true` in `developer_settings.json` in the profile
+  directory, a file nothing in the app writes. The new Community Features row writes it. The shortcut
+  works right away, the menu entry after a restart; an organization that disabled developer mode keeps
+  DevTools off, as before.
+
 ## 2026-10-15
 
 ### Nix: `flake.lock` is committed (thanks @sophietelle, #278)
