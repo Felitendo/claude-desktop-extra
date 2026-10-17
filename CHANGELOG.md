@@ -2,6 +2,20 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-17
+
+### Quick Entry hotkey survives a restart on KDE Plasma 6.7.4+ (#281)
+
+- **The Ctrl+Alt+Space hotkey keeps working after the app restarts on Plasma 6.7.4 and later.** The first
+  launch asked for the shortcut and it worked; every later launch left it dead while System Settings still
+  listed it. The bundled Electron (Chromium 152) only binds a portal shortcut it does not find stored, and
+  xdg-desktop-portal-kde 6.7.4 stopped arming stored shortcuts until the app binds them again (KDE bug
+  523063; Chromium fixed its side on main on 2026-10-15, CL 8527334, in no shipped Electron). A new patch
+  opens a second GlobalShortcuts portal session from the main process on every launch and re-binds the
+  stored shortcut, which Plasma accepts without a dialog; Plasma then delivers the hotkey to the app's own
+  session as on a first launch. Active only on KDE Wayland with KWin 6.4+; `CDB_KDE_GS_REBIND=0` turns it
+  off. Measured on Plasma 6.7.5 (Bazzite 44 live) and 6.7.2 (Fedora 43, unaffected).
+
 ## 2026-10-16
 
 ### Menus in popped-out session windows work while the main window is hidden (#280)

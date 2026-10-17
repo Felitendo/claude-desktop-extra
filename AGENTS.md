@@ -229,4 +229,19 @@ vboxmanage startvm "Fedora43-KDE"
 # SSH: ssh -p 2223 localhost
 # Shared folder: /tmp/fedora-test -> auto-mounted in guest
 # Install RPM: sudo dnf install /media/sf_shared/claude-desktop-extra-*.x86_64.rpm
+
+# Bazzite live VM (KDE Plasma 6.7.5 Wayland, boots the live ISO straight into Plasma, no install)
+vboxmanage startvm "Bazzite-live" --type gui      # ISO: ~/Downloads/bazzite-stable-live-amd64.iso, 8 GB RAM, EFI
+# Credentials: liveuser / live - the live session forgets the password and sshd on every reboot, so after
+# each boot open Konsole via keyboard (Alt+F4 closes the welcome window, Alt+F2, type konsole, Enter) and type:
+#   echo liveuser:live | sudo chpasswd; echo 'liveuser ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/liveuser; sudo systemctl start sshd
+# The sudoers line is load-bearing: Bazzite's login MOTD runs sudo, and once liveuser has a password every
+# new graphical session blocks on that prompt (black screen). Relogin without reboot: sudo systemctl restart plasmalogin.
+# SSH: sshpass -p live ssh -p 2224 liveuser@localhost
+# Keyboard layout: kwriteconfig6 --file kxkbrc --group Layout --key Use true; ... --key LayoutList de, then relogin
+# (KWin ignores the reloadConfig signal here; a new session reads kxkbrc at start).
+# /tmp is a 3.9 GB tmpfs, home has 1.5 GB: put AppImages and extracted trees under /tmp.
+# The screen auto-locks and a locked screen means the app never gets focus, so it never registers the hotkey:
+#   kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false; echo live | sudo -S loginctl unlock-sessions
+# Launch GUI apps with plasmashell's environment (see the Fedora VM notes in the /test-native skill), never a hand-picked env.
 ```

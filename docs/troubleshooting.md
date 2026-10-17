@@ -102,6 +102,18 @@ done
 
 Then restart Claude Desktop; the portal prompts to approve the shortcut again. Hotkey setup for other desktops: [quick-entry.md](quick-entry.md).
 
+## Quick Entry hotkey dead after a restart on Plasma 6.7.4+
+
+Symptom: the first launch asks "Claude wants to register the following shortcut", the hotkey works, and after any restart it does nothing, while System Settings -> Shortcuts still lists it under Claude.
+
+Cause: the bundled Electron registers the hotkey through the GlobalShortcuts portal and only binds a shortcut it does not find stored; since xdg-desktop-portal-kde 6.7.4 a stored shortcut stays inactive until the app binds it again. A bundled patch (`fix_quick_entry_kde_portal_rebind`) opens a second portal session on every launch and re-binds the stored shortcut, which Plasma accepts without a dialog. The portal's own view is on the bus:
+
+```bash
+dbus-monitor --session "interface='org.freedesktop.portal.GlobalShortcuts'"
+```
+
+A working launch shows `BindShortcuts` after `ListShortcuts`, and `Activated` on every press. `~/.config/Claude/logs/claude-patches.log` logs `[quick-entry] kde-rebind: armed 1 stored shortcut(s)` once the binding is in place, or the reason the patch stays inactive. `CDB_KDE_GS_REBIND=0` turns it off; binding `claude-desktop --toggle` to a key in System Settings -> Shortcuts -> Add New -> Command works without the portal.
+
 ## Known limitations
 
 - **App identity on Wayland.** `xdg-desktop-portal` resolves unsandboxed apps via the systemd user scope. We launch under `app-com.anthropic.Claude-*.scope` and install the `.desktop` as `com.anthropic.Claude.desktop` - the same reverse-DNS identity the official build uses, and the value Chromium derives the window `app_id` / `WM_CLASS` from - so scope, `app_id`, `StartupWMClass` and `.desktop` basename all agree. KDE global shortcuts and persistent portal authorizations (screen share / Computer Use consent) attach to that id and survive across sessions.
