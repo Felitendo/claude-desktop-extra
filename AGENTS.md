@@ -232,11 +232,14 @@ vboxmanage startvm "Fedora43-KDE"
 
 # Bazzite live VM (KDE Plasma 6.7.5 Wayland, boots the live ISO straight into Plasma, no install)
 vboxmanage startvm "Bazzite-live" --type gui      # ISO: ~/Downloads/bazzite-stable-live-amd64.iso, 8 GB RAM, EFI
-# Credentials: liveuser / live - the live session forgets the password and sshd on every reboot, so after
-# each boot open Konsole via keyboard (Alt+F4 closes the welcome window, Alt+F2, type konsole, Enter) and type:
+# Credentials: liveuser / live - the live session forgets EVERYTHING on reboot (password, sshd, /tmp, layout),
+# so after each boot open Konsole via keyboard (Alt+F4 closes the welcome window, Alt+F2, type konsole, Enter) and type:
 #   echo liveuser:live | sudo chpasswd; echo 'liveuser ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/liveuser; sudo systemctl start sshd
 # The sudoers line is load-bearing: Bazzite's login MOTD runs sudo, and once liveuser has a password every
-# new graphical session blocks on that prompt (black screen). Relogin without reboot: sudo systemctl restart plasmalogin.
+# new graphical session blocks on that prompt (black screen). Relogin without reboot (e.g. for a new keyboard
+# layout): kill the old session FIRST, or its KWin keeps the DRM output and the new session's screen stays frozen:
+#   pkill -x kwin_wayland; pkill -x plasmashell; sleep 2; sudo systemctl restart plasmalogin   (autologin returns in ~50 s)
+# Never take a live VirtualBox snapshot of this VM: an aborted one left the console frozen.
 # SSH: sshpass -p live ssh -p 2224 liveuser@localhost
 # Keyboard layout: kwriteconfig6 --file kxkbrc --group Layout --key Use true; ... --key LayoutList de, then relogin
 # (KWin ignores the reloadConfig signal here; a new session reads kxkbrc at start).
@@ -244,4 +247,8 @@ vboxmanage startvm "Bazzite-live" --type gui      # ISO: ~/Downloads/bazzite-sta
 # The screen auto-locks and a locked screen means the app never gets focus, so it never registers the hotkey:
 #   kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false; echo live | sudo -S loginctl unlock-sessions
 # Launch GUI apps with plasmashell's environment (see the Fedora VM notes in the /test-native skill), never a hand-picked env.
+# Claude for testing: copy a build tree (an extracted AppImage, or the release AppImage itself) to /tmp over scp,
+# then run it from a Konsole inside the session (Konsole has the session env). An EXTRACTED tree must be started as
+# `APPIMAGE=/tmp/<tree>/AppRun /tmp/<tree>/AppRun`: without APPIMAGE the launcher skips the .desktop integration, and
+# xdg-desktop-portal 1.22 then refuses GlobalShortcuts sessions ("An app id is required") - no KDE dialog, no hotkey.
 ```

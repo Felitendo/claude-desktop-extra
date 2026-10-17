@@ -251,6 +251,11 @@ try {
     vm.runInNewContext(MODULE_JS, c2);
     check("gate: " + expected, await c2.__cdbKdeGsRebind.gate(), expected);
   }
+  const c4 = { Buffer, setTimeout, clearTimeout, Promise, console, require: ctx.require,
+    process: { platform: "linux", env: Object.assign({}, env), pid: 1, argv: ["claude", "--ozone-platform=x11"], versions: { chrome: "152.0.0.0" } } };
+  c4.globalThis = c4;
+  vm.runInNewContext(MODULE_JS, c4);
+  check("gate: XWayland launch", await c4.__cdbKdeGsRebind.gate(), "XWayland launch (X11 key grabs, no portal)");
   const c3 = { Buffer, setTimeout, clearTimeout, Promise, console, require: ctx.require,
     process: { platform: "linux", env: Object.assign({}, env), pid: 1, versions: { chrome: "159.0.1.2" } } };
   c3.globalThis = c3;

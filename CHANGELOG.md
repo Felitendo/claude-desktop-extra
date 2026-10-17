@@ -13,8 +13,9 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   523063; Chromium fixed its side on main on 2026-10-15, CL 8527334, in no shipped Electron). A new patch
   opens a second GlobalShortcuts portal session from the main process on every launch and re-binds the
   stored shortcut, which Plasma accepts without a dialog; Plasma then delivers the hotkey to the app's own
-  session as on a first launch. Active only on KDE Wayland with KWin 6.4+; `CDB_KDE_GS_REBIND=0` turns it
-  off. Measured on Plasma 6.7.5 (Bazzite 44 live) and 6.7.2 (Fedora 43, unaffected).
+  session as on a first launch. Active only on KDE Wayland with KWin 6.4+, not on `CLAUDE_USE_XWAYLAND=1`
+  launches (those grab keys through X11); `CDB_KDE_GS_REBIND=0` turns it off. Measured on Plasma 6.7.5
+  (Bazzite 44 live) and 6.7.2 (Fedora 43, unaffected).
 
 ## 2026-10-16
 

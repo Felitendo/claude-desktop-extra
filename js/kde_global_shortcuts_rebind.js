@@ -12,8 +12,9 @@
 // lives as long as the app registers a global shortcut.
 //
 // Trigger: the electron.globalShortcut register/unregister calls, hooked here.
-// Gates: Linux, Wayland session, XDG_CURRENT_DESKTOP contains KDE, KWin >= 6.4
-// (older Plasma opens System Settings on BindShortcuts), Chromium < 159
+// Gates: Linux, Wayland session (not an XWayland launch), XDG_CURRENT_DESKTOP
+// contains KDE, KWin >= 6.4 (older Plasma opens System Settings on
+// BindShortcuts), Chromium < 159
 // (Chromium main binds per session since 2026-10-15), CDB_KDE_GS_REBIND != 0.
 // Transport: a minimal D-Bus client over the session bus socket (the bundle
 // ships no D-Bus library). Diagnostics: "[quick-entry] kde-rebind:" lines in
@@ -437,6 +438,9 @@
     if (env.CDB_KDE_GS_REBIND === "0") return "disabled by CDB_KDE_GS_REBIND=0";
     var wayland = env.XDG_SESSION_TYPE ? env.XDG_SESSION_TYPE === "wayland" : !!env.WAYLAND_DISPLAY;
     if (!wayland) return "not a Wayland session";
+    // CLAUDE_USE_XWAYLAND=1: the app grabs keys through X11, not the portal.
+    // Arming the KDE binding here would only take the key away from that grab.
+    if (Array.isArray(process.argv) && process.argv.indexOf("--ozone-platform=x11") >= 0) return "XWayland launch (X11 key grabs, no portal)";
     if (!/kde/i.test(env.XDG_CURRENT_DESKTOP || "")) return "not KDE (XDG_CURRENT_DESKTOP=" + (env.XDG_CURRENT_DESKTOP || "") + ")";
     var chrome = parseInt(String((process.versions && process.versions.chrome) || "0"), 10);
     if (chrome >= 159) return "Chromium " + chrome + " binds per session itself";
