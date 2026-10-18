@@ -15,6 +15,15 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   `FONTCONFIG_SYSROOT`, `fc-match sans-serif` and `monospace`, the `fc-list` count) and names the problem
   under **Problems found**. The launcher drops a `FONTCONFIG_*` variable that points at a missing path
   before starting the app and logs it; a session whose `fc-match sans-serif` is empty is logged too.
+- **The app now runs with its own font cache.** The reporter traced the empty font set to a stale
+  `~/.cache/fontconfig/*.cache-11` written by an Ubuntu distrobox sharing `$HOME`: Electron's bundled
+  fontconfig uses its own cache format and trusted the container's cache for the same font directory,
+  while the host's `fc-match` (another format) stayed healthy. The launcher starts the app with
+  `~/.cache/claude-desktop/fontconfig/fonts.conf`, the distro's `/etc/fonts/fonts.conf` with the shared
+  `<cachedir>` entries replaced by a private one, so nothing else sharing `$HOME` can feed the app a
+  cache. Font directories, `conf.d` and the user's fontconfig stay as configured; the first start
+  rescans the fonts once. An explicit `FONTCONFIG_*` variable is kept, `CLAUDE_PRIVATE_FONT_CACHE=0`
+  opts out, and `--diagnose` reports which cache the app uses.
 
 ### Quick Entry diagnostics (#281)
 
