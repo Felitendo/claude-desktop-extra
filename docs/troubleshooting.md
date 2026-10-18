@@ -112,7 +112,23 @@ Cause: the bundled Electron registers the hotkey through the GlobalShortcuts por
 dbus-monitor --session "interface='org.freedesktop.portal.GlobalShortcuts'"
 ```
 
-A working launch shows `BindShortcuts` after `ListShortcuts`, and `Activated` on every press. `~/.config/Claude/logs/claude-patches.log` logs `[quick-entry] kde-rebind: armed 1 stored shortcut(s)` once the binding is in place, or the reason the patch stays inactive. `CDB_KDE_GS_REBIND=0` turns it off; binding `claude-desktop --toggle` to a key in System Settings -> Shortcuts -> Add New -> Command works without the portal.
+A working launch shows `BindShortcuts` after `ListShortcuts`, and `Activated` on every press. `~/.config/Claude/logs/claude-patches.log` logs `[quick-entry] kde-rebind: armed 1 stored shortcut(s) for this session: Ctrl+Alt+Space` once the binding is in place, or the reason the patch stays inactive. `CDB_KDE_GS_REBIND=0` turns it off; binding `claude-desktop --toggle` to a key in System Settings -> Shortcuts -> Add New -> Command works without the portal.
+
+A stored shortcut without a key never fires, however often it is re-bound: Plasma keeps a shortcut it was asked about even when the "register the following shortcut" dialog was dismissed, and `~/.config/kglobalshortcutsrc` then holds `...=none,Ctrl+Alt+Space,...` under `[com.anthropic.Claude]`. The log names that case: `armed 1 stored shortcut(s) for this session: <id> (no key assigned - set one in System Settings > Shortcuts > Claude)`. Assign the key there (or remove the Claude entry and restart the app for a new dialog).
+
+## Quick Entry opens but shows no text field or ignores typing
+
+Symptom: the bar opens with only the Claude mark in it, nothing typed appears, Enter closes it without sending, while Ctrl+V followed by Enter does send. Code in transcripts collapses to a text-less pill and code blocks show only their language label, while the surrounding text renders.
+
+Cause: the app's renderers have no system font. claude.ai text renders because it ships its own web fonts, but the Quick Entry window's font, inline code and every fallback glyph need a font from fontconfig, and with none available the text has no size. In every case seen so far a `FONTCONFIG_FILE`, `FONTCONFIG_PATH` or `FONTCONFIG_SYSROOT` variable from a shell profile, a toolchain or a package manager pointed at a path that does not exist. `claude-desktop --diagnose` lists the three variables and `fc-match` under **Fonts**, and names the problem under **Problems found**; the launcher drops a variable that points nowhere before starting the app and logs that in `~/.cache/claude-desktop/launcher.log`. Fix the variable where it is set (`~/.profile`, `~/.bashrc`, `~/.config/environment.d/*.conf`, `~/.config/plasma-workspace/env/*.sh`) and log in again.
+
+Every time Quick Entry is shown, `claude-patches.log` gets one line describing what the window's renderer sees:
+
+```
+[quick-entry] shown 606x470 focused=true {"textarea":[536,40],"focused":true,"docFocus":true,"font":"anthropic-sans","color":"rgb(252, 252, 252)","placeholder":"rgb(161, 169, 177)","caret":"rgb(252, 252, 252)","fonts":"anthropic-sans:loaded ...","body":"darkTheme"}
+```
+
+A healthy window has a textarea about 40 px tall, `focused` and `docFocus` true, and the bundled `anthropic-sans` font loaded. The no-font case reads `anthropic-sans:error` with a 24 px textarea; `focused:false` points at keyboard focus (an input method or the compositor); `focused:true` with nothing visible and the font loaded points at the colors (a theme). Attach the line to a report together with `~/.config/Claude/logs/main.log`.
 
 ## Known limitations
 

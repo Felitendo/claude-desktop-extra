@@ -539,7 +539,13 @@
           ctl.boundIds = ids;
           ctl.attempt = 0;
           ctl.busy = false;
-          var names = bound.map(function (s) { return (s[1] && s[1].trigger_description) || s[0]; });
+          // KDE reports the key it holds for each id as trigger_description. An id
+          // without one is stored with NO key (the bind dialog was dismissed, or the
+          // key was cleared in System Settings): KDE will never fire it, so say so.
+          var names = bound.map(function (s) {
+            var trig = s[1] && s[1].trigger_description;
+            return trig ? trig : s[0] + " (no key assigned - set one in System Settings > Shortcuts > Claude)";
+          });
           log("armed " + bound.length + " stored shortcut(s) for this session: " + names.join(", "));
         });
       });

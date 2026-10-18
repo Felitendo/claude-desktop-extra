@@ -2,6 +2,31 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-18
+
+### Empty Quick Entry bar and collapsed code: no system font (#281, #282)
+
+- **An empty Quick Entry bar that drops typing, and inline code that collapses to a text-less pill, come
+  from a session in which fontconfig finds no fonts.** claude.ai text still renders because it ships its
+  own web fonts, but the Quick Entry window, code in transcripts and every fallback glyph need a system
+  font, and without one the text has no size. Reproduced on Bazzite 44 with the real app by pointing
+  `FONTCONFIG_FILE` at an empty configuration: both screenshots from the reports appear, pixel for pixel.
+  `claude-desktop --diagnose` gains a **Fonts** section (`FONTCONFIG_FILE`, `FONTCONFIG_PATH`,
+  `FONTCONFIG_SYSROOT`, `fc-match sans-serif` and `monospace`, the `fc-list` count) and names the problem
+  under **Problems found**. The launcher drops a `FONTCONFIG_*` variable that points at a missing path
+  before starting the app and logs it; a session whose `fc-match sans-serif` is empty is logged too.
+
+### Quick Entry diagnostics (#281)
+
+- **Every Quick Entry show now logs what the window sees.** `claude-patches.log` gets one
+  `[quick-entry] shown WxH focused=... {textarea, focused, font, color, placeholder, caret, fonts}` line
+  per show, so a bar without a visible text field can be told apart by its line: font not loaded, no
+  keyboard focus, or colors from a theme. Public Electron APIs only.
+- **A KDE shortcut stored without a key is named as such.** When the "register the following shortcut"
+  dialog was dismissed once, Plasma keeps the shortcut with no key and never fires it; the re-bind log line
+  now ends in `(no key assigned - set one in System Settings > Shortcuts > Claude)` instead of listing the
+  id as if it were armed. Reproduced on Bazzite 44 (Plasma 6.7.5) after a fresh login.
+
 ## 2026-10-17
 
 ### Quick Entry hotkey survives a restart on KDE Plasma 6.7.4+ (#281)

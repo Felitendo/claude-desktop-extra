@@ -15,7 +15,7 @@ Flags this project adds on top of the official build (run `claude-desktop --help
 | `--native-titlebar` | Use the native window frame instead of the integrated titlebar. Overrides the **Native titlebar** switch in Settings → **Extra** → **Community Features** for this launch |
 | `--no-window-controls` | Drop the min/max/close buttons; window edges still resize, and you close or minimize through your WM. Overrides the **Hide window controls** switch in Settings → **Extra** → **Community Features** for this launch |
 | `--no-systemd-scope` | Skip the `systemd --user --scope` wrapper for this launch (same as `CLAUDE_DISABLE_SYSTEMD_SCOPE=1`) |
-| `--diagnose` | Print session type, portal status, hotkey state, and which host tools the app needs are missing (with what stops working), for issue reports. See [Reporting a bug](troubleshooting.md#reporting-a-bug) |
+| `--diagnose` | Print session type, portal status, hotkey state, the fontconfig state the app renders with, and which host tools the app needs are missing (with what stops working), for issue reports. See [Reporting a bug](troubleshooting.md#reporting-a-bug) |
 | `--integrate` / `--unintegrate` | Register / remove the `claude://` handler and menu entry (AppImage only; happens automatically on launch) |
 
 Environment variables that tune the launch: [environment-variables.md](environment-variables.md).

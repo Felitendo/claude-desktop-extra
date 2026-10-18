@@ -1379,6 +1379,26 @@ _pw_store_detect() {
 # Does the app treat this session as Wayland? Same test as upstream's own
 # (XDG_SESSION_TYPE when set and non-empty, else WAYLAND_DISPLAY), applied to
 # the value the launcher hands the app, i.e. after _normalize_session_type.
+# A FONTCONFIG_FILE / FONTCONFIG_SYSROOT value must exist; FONTCONFIG_PATH is a
+# colon list of which at least one directory must exist. A relative
+# FONTCONFIG_FILE is resolved by fontconfig against its config dirs, so it is
+# left alone. Used by --diagnose and by the pre-launch environment guard.
+_fontconfig_var_usable() {
+    local _v="${!1:-}" _d
+    [[ -n "$_v" ]] || return 0
+    case "$1" in
+        FONTCONFIG_PATH)
+            local IFS=:
+            for _d in $_v; do [[ -d "$_d" ]] && return 0; done
+            return 1
+            ;;
+        *)
+            [[ "$_v" == /* ]] || return 0
+            [[ -e "$_v" ]]
+            ;;
+    esac
+}
+
 _diag_app_is_wayland() {
     if [[ -n "${XDG_SESSION_TYPE:-}" ]]; then
         [[ "$XDG_SESSION_TYPE" == 'wayland' ]]
@@ -1619,6 +1639,38 @@ _diagnose() {
     fi
     echo "gsettings = $(command -v gsettings || echo '(missing)')"
     echo "gdbus = $(command -v gdbus || echo '(missing)')"
+    echo
+    echo '--- Fonts (fontconfig, as the app sees it) ---'
+    # claude.ai text is web fonts, but the Quick Entry window, code in
+    # transcripts and every fallback glyph need a system font through
+    # fontconfig. A session whose fontconfig finds nothing shows an empty Quick
+    # Entry bar that drops typing and collapsed code spans (#281, #282). The
+    # usual cause is a FONTCONFIG_* variable from a shell profile or toolchain
+    # that points nowhere; the launcher drops such a value for the app.
+    local _fc_v _fc_sans _fc_mono _fc_n
+    for _fc_v in FONTCONFIG_FILE FONTCONFIG_PATH FONTCONFIG_SYSROOT; do
+        if [[ -z "${!_fc_v:-}" ]]; then
+            echo "$_fc_v = (unset)"
+        elif _fontconfig_var_usable "$_fc_v"; then
+            echo "$_fc_v = ${!_fc_v}"
+        else
+            echo "$_fc_v = ${!_fc_v} (MISSING)"
+            _diag_problems+=("$_fc_v points to a missing path: fontconfig finds no fonts, Quick Entry shows an empty bar and code in transcripts collapses - the launcher drops it for the app; remove it from the shell profile or environment.d that sets it")
+        fi
+    done
+    if command -v fc-match &>/dev/null; then
+        _fc_sans="$(fc-match sans-serif 2>/dev/null || true)"
+        _fc_mono="$(fc-match monospace 2>/dev/null || true)"
+        _fc_n="$(fc-list 2>/dev/null | wc -l || true)"
+        echo "fc-match sans-serif = ${_fc_sans:-(nothing)}"
+        echo "fc-match monospace = ${_fc_mono:-(nothing)}"
+        echo "fc-list = ${_fc_n:-0} font file(s)"
+        if [[ -z "$_fc_sans" || "${_fc_n:-0}" == 0 ]]; then
+            _diag_problems+=("fontconfig finds no fonts in this session: Quick Entry shows an empty bar and drops typing, code in transcripts collapses - check FONTCONFIG_* above, ~/.config/fontconfig/fonts.conf and fc-cache -v")
+        fi
+    else
+        echo 'fc-match = (missing; install fontconfig to inspect)'
+    fi
     echo
     echo '--- App identity ---'
     echo "APP_ID = $APP_ID"
@@ -2824,6 +2876,22 @@ fi
 # ---------------------------------------------------------------------------
 
 export ELECTRON_FORCE_IS_PACKAGED=true
+
+# Fonts: a FONTCONFIG_FILE / FONTCONFIG_PATH / FONTCONFIG_SYSROOT that points
+# nowhere (a stale shell profile, a toolchain env) leaves Chromium's renderers
+# without a single system font. claude.ai text still renders (web fonts), but
+# the Quick Entry bar comes up empty and drops typing, and code in transcripts
+# collapses (#281, #282). Drop such a value for the app and say so; a usable
+# value is passed through untouched.
+for _fc_var in FONTCONFIG_FILE FONTCONFIG_PATH FONTCONFIG_SYSROOT; do
+    if ! _fontconfig_var_usable "$_fc_var"; then
+        log "$_fc_var=${!_fc_var} points to a missing path: unset for the app (fontconfig would find no fonts; Quick Entry and code rendering break)"
+        unset "$_fc_var"
+    fi
+done
+if command -v fc-match &>/dev/null && [[ -z "$(fc-match sans-serif 2>/dev/null || true)" ]]; then
+    log 'fontconfig finds no fonts in this session (fc-match sans-serif is empty): Quick Entry will show an empty bar and code in transcripts will collapse - run claude-desktop --diagnose'
+fi
 
 # Pass through CLAUDE_NATIVE_TITLEBAR if set (env var, not just --flag)
 if [[ -n "${CLAUDE_NATIVE_TITLEBAR:-}" ]]; then

@@ -137,7 +137,7 @@ try {
   // --------------------------------------------------------- fake portal
   // One D-Bus peer: the daemon (Hello/AddMatch) and the portal
   // (org.freedesktop.portal.Desktop) answer on the same connection.
-  const portal = { listed: [], bindCalls: [], createCalls: 0, listCalls: 0, versionCalls: 0, conns: 0, open: 0, lastSession: null, emitChanged: null };
+  const portal = { listed: [], bindCalls: [], createCalls: 0, listCalls: 0, versionCalls: 0, conns: 0, open: 0, lastSession: null, emitChanged: null, noKeyIds: [] };
   const PORTAL_PATH = "/org/freedesktop/portal/desktop";
   server = createServer((sock) => {
     portal.conns++; portal.open++;
@@ -183,7 +183,8 @@ try {
           respond(m, { shortcuts: ["a(sa{sv})", portal.listed.map(([id, d]) => [id, { description: ["s", d], trigger_description: ["s", "Ctrl+Alt+Space"] }])] });
         } else if (m.member === "BindShortcuts") {
           portal.bindCalls.push({ session: m.body[0], shortcuts: m.body[1], parent: m.body[2] });
-          respond(m, { shortcuts: ["a(sa{sv})", m.body[1].map(([id, p]) => [id, { description: ["s", p.description || ""], trigger_description: ["s", "Ctrl+Alt+Space"] }])] });
+          // KDE omits trigger_description for an id it stores without a key.
+          respond(m, { shortcuts: ["a(sa{sv})", m.body[1].map(([id, p]) => [id, Object.assign({ description: ["s", p.description || ""] }, portal.noKeyIds.includes(id) ? {} : { trigger_description: ["s", "Ctrl+Alt+Space"] })])] });
         } else send({ type: 3, replySerial: m.serial, dest: unique, errorName: "org.freedesktop.DBus.Error.UnknownMethod", signature: "s", body: ["no " + m.member] });
       }
     });
@@ -231,6 +232,15 @@ try {
   portal.emitChanged();
   check("ShortcutsChanged -> bind with both ids", await waitFor(() => portal.bindCalls.length === 2, 4000), true);
   check("second bind carries both ids", portal.bindCalls[1].shortcuts.length, 2);
+
+  // An id KDE stores WITHOUT a key (bind dialog dismissed): the bind succeeds
+  // but the log must say the hotkey cannot fire, naming the id.
+  portal.noKeyIds = ["BBBB-Ctrl+Alt+Space"];
+  portal.listed.push(["BBBB-Ctrl+Alt+Space", "Claude shortcut: Ctrl+Alt+Space"]);
+  portal.emitChanged();
+  check("ShortcutsChanged -> third bind", await waitFor(() => portal.bindCalls.length === 3, 4000), true);
+  check("no-key id named in the log", await waitFor(() => logLines.some((l) => /armed 3 stored shortcut\(s\).*BBBB-Ctrl\+Alt\+Space \(no key assigned - set one in System Settings > Shortcuts > Claude\)/.test(l)), 2000), true);
+  check("keyed ids still logged by their key", logLines.some((l) => /armed 3 stored shortcut\(s\) for this session: Ctrl\+Alt\+Space, Ctrl\+Alt\+Space, BBBB/.test(l)), true);
 
   // Upstream drops its shortcuts: our session must go away with them.
   fakeGlobalShortcut.unregisterAll();
