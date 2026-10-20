@@ -923,14 +923,30 @@ __cdb_log("Error applying config: "+e.message)
 __cdb_startWatch(typeof __cdb_cfg0==="object"?__cdb_cfg0:null);
 // Appearance light/dark flips rebuild the sheet so the :root fallback follows the new mode.
 try{if(_nt&&_nt.on)_nt.on("updated",function(){setTimeout(function(){var r=__cdb_reload("nativeTheme "+(__cdb_isDark()?"dark":"light"));if(r&&!r.ok)__cdb_log("nativeTheme reload: "+r.error);__cdb_paintAll()},50)})}catch(e){__cdb_log("nativeTheme hook error: "+e.message)}
+// Only the app's own pages are themed: the claude.ai main view (1P), app://localhost
+// (3P) and upstream's local renderer windows (Quick Entry, find-in-page, buddy, ...).
+// Everything else - the Code tab's browser pane, Cowork file previews, devtools,
+// localhost dev servers - shows third-party content that must keep its own colors.
+// app://localhost has the opaque origin "null", so normalise to protocol + "//" + host.
+var __cdb_themeOrigins=["https://claude.ai","https://preview.claude.ai","https://claude.com","https://preview.claude.com","app://localhost"];
+function __cdb_themable(url){
+try{
+var u=new URL(url);
+if(u.protocol==="file:")return u.pathname.indexOf("/app.asar/.vite/renderer/")>=0;
+var o=u.origin;
+if(!o||o==="null")o=u.protocol+"//"+u.host;
+return __cdb_themeOrigins.indexOf(o)>=0;
+}catch(e){return false}
+}
 // Reads __cdb_state at dom-ready, so a window opened after a live switch gets
 // the CURRENT theme rather than whatever was active at startup.
 _app.on("web-contents-created",function(_ev,wc){
 wc.on("dom-ready",function(){
 try{
 var url=wc.getURL()||"";
-if(url.indexOf("devtools://")===0)return;
-if(url.indexOf("http://localhost")===0||url.indexOf("http://127.0.0.1")===0||url.indexOf("https://localhost")===0)return;
+// A tracked page that navigated to a third-party URL leaves the registry, so a
+// later live switch does not repaint it.
+if(!__cdb_themable(url)){__cdb_wcKeys.delete(wc);return}
 if(url.indexOf("cdb-theme-picker")>=0)return;
 __cdb_trackWc(wc);
 if(!__cdb_state.css)return;

@@ -2,6 +2,17 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-20
+
+### Custom themes stay out of the browser pane (#284)
+
+- **A custom theme no longer recolors third-party pages.** The theme sheet went into every page except
+  devtools and localhost, so sites opened in the Code tab's browser pane (and Cowork file previews)
+  inherited the theme's text color: with `breeze`, light pages showed white text on white. The theme now
+  applies only to the app's own pages: claude.ai and claude.com (1P), `app://localhost` (3P), and the
+  app's local windows (Quick Entry, find-in-page, buddy). Thanks to @furiozo-ga for the report and the
+  allow-list idea.
+
 ## 2026-10-18
 
 ### Empty Quick Entry bar and collapsed code: no system font (#281, #282)
