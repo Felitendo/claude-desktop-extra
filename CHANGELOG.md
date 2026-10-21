@@ -16,6 +16,15 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   ten minutes it falls back to upstream behavior. Each decision is one `[cdb-renderer]` line in
   `claude-patches.log`. Thanks to @ToRvaLDz for the report and the log analysis.
 
+### Custom themes: themed caption-button area
+
+- **The minimize / maximize / close area of the integrated titlebar follows the active theme.** It kept
+  upstream's own colors (stock, or the page color saved from the last run, with stock symbols), so it
+  showed as a stock box at the right end of a themed top bar and missed live switches. It now takes the
+  theme's top bar color and a `--text-200` symbol color, follows light/dark flips and switches live from
+  the theme picker. No theme, a transparent window and the native titlebar behave as before. Thanks to
+  @fatihaydost.
+
 ### Claude Desktop 3.1623.0 (#285)
 
 - **Built on upstream 3.1623.0** (Electron 44.9.0, bundled Claude Code 2.1.304). The new major number
