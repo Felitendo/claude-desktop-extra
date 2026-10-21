@@ -51,6 +51,11 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   rollout get the Settings -> System -> Computer use switch again instead of "Computer use isn't available
   on the Team and Enterprise plans yet", and Code sessions and Cowork tasks on this computer carry the
   tools once it is on. An organization compliance lock still switches it off.
+- **Computer Use in Cowork chats on X11: the tool descriptions no longer claim that screenshots contain only
+  granted apps' windows; the model asks for access through the consent card and then sees the whole
+  display.** The descriptions come from a static per-session preset that was the "granted apps only" one on
+  X11; it now reads as whole-display there, and the request_access text says so instead of calling X11 a
+  Wayland session.
 - **Build:** the Personal Plugins, window bounds, tray icon, Quick Entry ready-to-show, GrowthBook overrides
   and profile window title patches no longer need the legacy PCRE1 library at run time (ported from
   `std/nre` to the pure-Nim `regex` package, byte-identical output); the Personal Plugins harness now prints
