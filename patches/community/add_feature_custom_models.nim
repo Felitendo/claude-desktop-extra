@@ -75,7 +75,7 @@ const MARKER = "__CDB_CUSTOM_MODELS__"
 const PLACEHOLDER = "\"__CDB_CM_PRELOAD_SRC__\""
 # B. `async buildSessionEnv(e,n,...){let d=await t.cy(n.sessionEnv)` (since
 # v2.37337.1; before it was a plain `{...n.sessionEnv}` copy): the session env
-# goes through upstream's managed-network-env helper (`cy` -> fills managed
+# goes through upstream's managed-network-env helper (`cy`, `Zy` in v3.1623.0 -> fills managed
 # proxy/CA variables the env lacks, then enforces managed proxy settings). We
 # hand that helper `{...n.sessionEnv,...cliEnv(n.sessionEnv)}` instead, so
 # managed policy still has the last word; cliEnv() sets no network variables.

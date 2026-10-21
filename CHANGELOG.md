@@ -2,6 +2,30 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-21
+
+### Claude Desktop 3.1623.0 (#285)
+
+- **Built on upstream 3.1623.0** (Electron 44.9.0, bundled Claude Code 2.1.304). The new major number
+  comes with a one-way move of the app's data folder on Windows; Linux keeps `~/.config/Claude`. Upstream
+  release notes: https://claude.com/docs/cowork/changelog. Nothing we ship was taken over or removed
+  upstream, and no new mac/Windows-only feature needs a Linux patch.
+- **Five patches re-fitted to the new code shapes**, same behavior:
+  - integrated titlebar and transparent window: the main window's background is now the page color saved
+    from the last run, read through a call that takes an argument; the titlebar color follows it;
+  - hidden start after session restore: only the window-show check is patched, the new Reset App Data
+    check of `--startup` keeps upstream behavior;
+  - Extra settings: the restart hook follows upstream's reworked relaunch;
+  - Computer Use: the first screenshot note follows a longer tool handler.
+- **Cowork's plugin page on Linux shows the same plugins as on macOS and Windows.** The package no longer
+  forces Claude Code routing for Cowork, which listed the Claude Code CLI plugins there although Cowork
+  tasks never loaded them, and made an uninstall there edit the Claude Code setup. Home-directory CLI
+  plugins still show as Personal Plugins.
+- **Catalogs:** the Anthropic Features flag list covers 619 flags, and Extra -> Deployment lists all 193
+  managed-settings keys of this version, including `quickEntryDefaultShortcut`, `releaseChannel`,
+  `skillScanningEnabled`, `sshConfigs` and `disableDesktopLocalSessions`; the five unnamed "Reserved
+  setting" keys are shown read-only.
+
 ## 2026-10-20
 
 ### Custom themes stay out of the browser pane (#284)

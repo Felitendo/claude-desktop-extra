@@ -594,7 +594,7 @@ proc apply*(input: string): string =
     # flow ending in `||X.call(Y)}}}const <dims>=...` instead of the old
     # `;X()}}const <dims>=...`). The old prologue anchor `;[\w$]+\(\)\}\}const`
     # no longer matches. The screenshot-dims decl itself is unique, so anchor
-    # the async header, then lazily skip (up to 8000 chars) straight to that
+    # the async header, then lazily skip (up to 12000 chars) straight to that
     # decl - do not try to pin the exact prologue shape.
     #
     # v1.26832.0 rewrote the decl itself: the `X||(a=b.getLastScreenshotDims)==
@@ -622,8 +622,12 @@ proc apply*(input: string): string =
     # that the options object spreads (`S={...x(),readTheGrantsAfresh:x,...`).
     # Its body has braces and commas, so a hoisted decl may also be a
     # `()=>{...}` arrow with at most one nested brace level.
+    # v3.1623.0 grew the handler prologue: the header-to-decl gap is 8078
+    # chars (7789 in v2.42304.2), past the old 8000 cap, so the skip window is
+    # 12000. The `return async(` header is still the only one within 30k
+    # chars before the decl, so the wider window cannot pick another handler.
     let seedPat =
-      re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,8000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=(?:[^{},]{1,200}|\(\)=>\{(?:[^{}]|\{[^{}]{0,400}\}){1,600}\}))*,([\w$]+)=\{"""
+      re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,12000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=(?:[^{},]{1,200}|\(\)=>\{(?:[^{}]|\{[^{}]{0,400}\}){1,600}\}))*,([\w$]+)=\{"""
     let maybeSeed = content.find(seedPat)
     if maybeSeed.isNone:
       echo "  [FAIL] screenshot intro note: wrapper seed anchor not found"

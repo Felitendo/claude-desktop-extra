@@ -1,44 +1,19 @@
 # @patch-target: app.asar.contents/.vite/build/index.js
 # @patch-type: nim
 #
-# A: Force CCD mode on Linux (no Cowork VM available).
-# B: CLI stores personal plugins as scope="project"+projectPath=$HOME;
-#    promote those to scope="user" so the web UI shows them under
-#    "Personal Plugins" instead of the current project header.
+# The Claude Code CLI stores personal plugins as scope="project" with
+# projectPath=$HOME. getAllLocalPluginsWithResolver promotes those entries to
+# scope="user", so the web UI lists them under "Personal Plugins" instead of
+# under the current project header.
 
 import std/[os, strformat, strutils]
 import std/nre
 
-const EXPECTED_PATCHES = 2
+const EXPECTED_PATCHES = 1
 
 proc apply*(input: string): string =
   result = input
   var patchesApplied = 0
-
-  # A: CCD/Cowork gate
-  if result.contains(
-    re"""function [\w$]+\([\w$]+\)\{return process\.platform==="linux"\|\|"""
-  ):
-    echo "  [SKIP] A already patched"
-    inc patchesApplied
-  else:
-    # v1.24012.9: function X(A){return(A==null?void 0:A.mode)==="ccd"}
-    # v1.26832.0: function $(e){return e?.mode===`ccd`}
-    # The minifier now emits native optional chaining and backtick literals, so
-    # accept either desugaring and either quoting.
-    let m = result.find(
-      re"""function ([\w$]+)\(([\w$]+)\)\{return\s*(?:\(\2==null\?void 0:\2\.mode\)|\2\?\.mode)===["`]ccd["`]\}"""
-    )
-    if m.isSome:
-      let c = m.get.captures
-      result =
-        result[0 ..< m.get.matchBounds.a] & "function " & c[0] & "(" & c[1] &
-        "){return process.platform===\"linux\"||(" & c[1] & "==null?void 0:" & c[1] &
-        ".mode)===\"ccd\"}" & result[m.get.matchBounds.b + 1 .. ^1]
-      echo "  [OK] A CCD gate (1 match)"
-      inc patchesApplied
-    else:
-      echo "  [FAIL] A CCD gate: 0 matches"
 
   # B: scope normalization in getAllLocalPluginsWithResolver
   if result.contains(

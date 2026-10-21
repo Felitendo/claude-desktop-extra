@@ -339,12 +339,12 @@
     };
   }
 
-  // The managed-config key catalog of Claude Desktop v2.37337.1 (184 keys), read out of the
+  // The managed-config key catalog of Claude Desktop v3.1623.0 (193 keys), read out of the
   // bundle's own schema (flat key, zod leaf type, scopes, title). Upstream drives
   // its 3P Setup wizard from that schema; we cannot reach it from here (it is
   // module-scoped in index.pre.js), so this is a PINNED COPY and is therefore
   // version-sensitive: re-extract it on an upstream bump with
-  //   rg -ao 'flatKey:[`"][A-Za-z0-9_]+[`"]' .vite/build/index.pre.js
+  //   grep -ao 'flatKey:[`"][A-Za-z0-9_]*[`"]' .vite/build/index.pre.js | sort -u   (grep -a: rg finds nothing on bundles)
   // (since v1.26832.0 the minifier emits backtick string literals)
   // A key that no longer exists is silently dropped by the local config reader,
   // but it INVALIDATES a whole /etc managed file - which is exactly why the page
@@ -581,12 +581,12 @@
       note: "Off means Claude never prevents sleep and hides the keep-awake switches in Settings, the Scheduled page and the Code tab; applies to a running app (available since v2.7032.0)." },
     { key: "developerModeEnabled", kind: "bool", group: "sandbox", scope: "both",
       label: "Allow Developer Mode",
-      note: "Applies to a running app (upstream gates this @next)." },
+      note: "Applies to a running app (available since v2.37337.1)." },
+    { key: "quickEntryDefaultShortcut", kind: "text", group: "sandbox", scope: "3p",
+      label: "Default Quick Entry shortcut",
+      note: "Replaces the built-in default shortcut with an accelerator such as Ctrl+Alt+K, or off for none; a value upstream does not accept is logged and the built-in default applies. Applies to a running app (upstream gates this @next)." },
     { key: "chatAdvancedFileAnalysisEnabled", kind: "bool", group: "sandbox", scope: "3p",
       label: "Advanced file analysis in Chat" },
-    { key: "chatAdvancedFileAnalysisNetworkEnabled", kind: "bool", group: "sandbox", scope: "3p",
-      label: "Network access for file analysis",
-      note: "Lets Chat's file-analysis shell reach the hosts in the egress allowlist; needs Chat and advanced file analysis on (upstream gates this @next)." },
     { key: "autoModeEnabled", kind: "bool", group: "sandbox", scope: "3p", label: "Cowork Auto mode" },
     { key: "toolSearchEnabled", kind: "bool", group: "sandbox", scope: "3p", label: "Tool search" },
     { key: "allowedWorkspaceFolders", kind: "lines", group: "sandbox", scope: "both",
@@ -604,6 +604,9 @@
       label: "Disable bundled skills and workflows" },
     { key: "skillCreationEnabled", kind: "bool", group: "sandbox", scope: "3p",
       label: "Allow user-created skills" },
+    { key: "skillScanningEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Scan user-created skills",
+      note: "Off unless set to true; an unreadable value counts as on. Only offered while user-created skills are allowed; applies to a running app (upstream gates this @next)." },
     { key: "userPluginMarketplacesEnabled", kind: "bool", group: "sandbox", scope: "3p", dflt: true,
       label: "Allow user-added plugin marketplaces",
       note: "Off hides the add-marketplace surfaces and refuses adds that still reach the app; marketplaces already registered on the machine and org-provisioned ones are unaffected (available since v1.37937.0)." },
@@ -630,7 +633,7 @@
       lock: "read from device management only and hidden in upstream's own wizard - deploy it through /etc/claude-desktop/managed-settings.json" },
     { key: "coworkFileReadCheck", kind: "json", group: "sandbox", scope: "3p",
       label: "File read check",
-      lock: "internal-only upstream and hidden in its own wizard: a packaged build does not recognize the key yet, and in /etc/claude-desktop/managed-settings.json an unrecognized key makes upstream ignore the whole file, so this page never writes it" },
+      lock: "undocumented upstream (available since v2.37337.1, public-undocumented) and hidden in its own wizard, which never shows it, so this page never writes it either" },
     { key: "organizationInstructions", kind: "text", group: "sandbox", scope: "3p", maxLen: 3000,
       label: "Organization instructions",
       note: "Free text appended in a delimited block after the app's own system prompt in Chat, Cowork and Code, presented to the model as outranking user preferences; guidance, not an enforced control, and capped at 3000 characters upstream." },
@@ -654,9 +657,15 @@
     { key: "disableBypassPermissionsMode", kind: "bool", group: "sandbox", scope: "3p",
       label: "Disable bypass permissions mode",
       note: "Removes the bypass permissions mode from Code sessions and Cowork tasks, so Claude always follows the permission policy (available since v1.46388.1)." },
+    { key: "disableDesktopLocalSessions", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Disable local Code sessions",
+      note: "Code sessions run only on SSH hosts, never on this computer; without an SSH host allowlist Code may have nowhere to start a session (available since v2.42304.0)." },
     { key: "sshHostAllowlist", kind: "lines", group: "sandbox", scope: "3p",
       label: "SSH host allowlist",
       note: "One host pattern per line; empty means SSH sessions stay off unless the device's Claude Code managed-settings allowlist applies. * allows any host." },
+    { key: "sshConfigs", kind: "json", group: "sandbox", scope: "3p",
+      label: "SSH connections",
+      note: "JSON array of up to 100 { id, name, sshHost, sshPort, sshIdentityFile } connections offered for SSH sessions; id, name and sshHost are required, sshIdentityFile is a key path on the device. Upstream asks the user to consent before applying it (available since v2.42304.0)." },
     { key: "sshTransport", kind: "enum", group: "sandbox", scope: "3p",
       label: "SSH connection engine", options: ["auto", "system-openssh", "builtin"],
       note: "system-openssh runs the connection through the ssh program on every platform; builtin uses the app's own SSH library." },
@@ -684,6 +693,21 @@
     { key: "officeAccessPolicies", kind: "json", group: "sandbox", scope: "3p",
       label: "Document access policies",
       note: "JSON array of { effect, action, resource } statements keyed on the Microsoft Purview sensitivity label of the open or attached file (upstream gates this @next)." },
+    { key: "artifactsEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Reserved setting 1 (Claude Docs/Slides/Designs editors: all editors)",
+      lock: "upstream titles it \"Reserved setting 1\" with no description, no wizard group and availability @next; it belongs to the Docs, Slides, Designs, Dashboards and Motion editors (\"Make Claude Docs, Slides, Designs and more\"), whose 3P switches are not documented yet, so this page never writes it" },
+    { key: "artifactsDesignEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Reserved setting 2 (Claude Docs/Slides/Designs editors: Designs)",
+      lock: "upstream titles it \"Reserved setting 2\" with no description, no wizard group and availability @next; it belongs to the Docs, Slides, Designs, Dashboards and Motion editors (\"Make Claude Docs, Slides, Designs and more\"), whose 3P switches are not documented yet, so this page never writes it" },
+    { key: "artifactsSlidesEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Reserved setting 3 (Claude Docs/Slides/Designs editors: Slides)",
+      lock: "upstream titles it \"Reserved setting 3\" with no description, no wizard group and availability @next; it belongs to the Docs, Slides, Designs, Dashboards and Motion editors (\"Make Claude Docs, Slides, Designs and more\"), whose 3P switches are not documented yet, so this page never writes it" },
+    { key: "artifactsDashboardEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Reserved setting 4 (Claude Docs/Slides/Designs editors: Dashboards)",
+      lock: "upstream titles it \"Reserved setting 4\" with no description, no wizard group and availability @next; it belongs to the Docs, Slides, Designs, Dashboards and Motion editors (\"Make Claude Docs, Slides, Designs and more\"), whose 3P switches are not documented yet, so this page never writes it" },
+    { key: "artifactsMotionEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Reserved setting 5 (Claude Docs/Slides/Designs editors: Motion)",
+      lock: "upstream titles it \"Reserved setting 5\" with no description, no wizard group and availability @next; it belongs to the Docs, Slides, Designs, Dashboards and Motion editors (\"Make Claude Docs, Slides, Designs and more\"), whose 3P switches are not documented yet, so this page never writes it" },
     { key: "disableDeploymentModeChooser", kind: "bool", group: "sandbox", scope: "3p",
       label: "Disable claude.ai sign-in",
       lock: "this is the key that locks a machine into 3P - it overrides the switch above, so this page never writes it" },
@@ -783,8 +807,11 @@
     { key: "endUserAttribution", kind: "bool", group: "telemetry", scope: "3p", label: "End-user attribution",
       note: "Renamed upstream in v1.24012 (the all-lowercase enduserAttribution is still read as a legacy key)." },
     { key: "updateViaUpdatesHost", kind: "bool", group: "telemetry", scope: "3p",
-      label: "Check for updates on releases.claude.ai",
+      label: "Check for updates on releases.claude.com",
       note: "Available since v1.26832.0." },
+    { key: "releaseChannel", kind: "enum", group: "telemetry", scope: "3p",
+      label: "Release channel", options: ["stable", "staggered"],
+      note: "Staggered devices get newer releases, security fixes included, later than Stable; unset means stable and an unreadable value counts as staggered. Applies to a running app (upstream gates this @next)." },
 
     { key: "otlpAttrMaxChars", kind: "int", group: "telemetry", scope: "3p", max: 32000,
       label: "Telemetry attribute length limit",
