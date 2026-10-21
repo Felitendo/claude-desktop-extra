@@ -56,6 +56,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   display.** The descriptions come from a static per-session preset that was the "granted apps only" one on
   X11; it now reads as whole-display there, and the request_access text says so instead of calling X11 a
   Wayland session.
+- **Build:** the Quick Entry KDE rebind harness waits for the "armed" log line instead of reading it right after the bind call (a one-in-six timing flake that turned release runs red).
 - **Build:** the Personal Plugins, window bounds, tray icon, Quick Entry ready-to-show, GrowthBook overrides
   and profile window title patches no longer need the legacy PCRE1 library at run time (ported from
   `std/nre` to the pure-Nim `regex` package, byte-identical output); the Personal Plugins harness now prints

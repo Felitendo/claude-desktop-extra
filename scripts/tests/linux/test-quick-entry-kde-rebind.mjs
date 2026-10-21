@@ -216,7 +216,9 @@ try {
   check("bind passes the description through", bind.shortcuts[0][1].description, "Claude shortcut: Ctrl+Alt+Space");
   check("bind has no preferred trigger", "preferred_trigger" in bind.shortcuts[0][1], false);
   check("bind sends an empty parent window", bind.parent, "");
-  check("armed line logged", logLines.some((l) => /kde-rebind: armed 1 stored shortcut/.test(l)), true);
+  // The line is written after the BindShortcuts reply resolves, so it can land a tick
+  // after the bind call itself: wait for it instead of reading the log synchronously.
+  check("armed line logged", await waitFor(() => logLines.some((l) => /kde-rebind: armed 1 stored shortcut/.test(l)), 4000), true);
   check("connection stays open after the bind", portal.open, 1);
   check("one portal connection in total", portal.conns, 1);
 
