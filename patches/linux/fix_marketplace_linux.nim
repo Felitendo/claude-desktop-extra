@@ -5,58 +5,81 @@
 # projectPath=$HOME. getAllLocalPluginsWithResolver promotes those entries to
 # scope="user", so the web UI lists them under "Personal Plugins" instead of
 # under the current project header.
+#
+# Uses the `regex` package (pure Nim) like the other patches: std/nre dlopens
+# PCRE1 at run time, which ubuntu-24.04 (the CI harness runner) does not ship.
+# `regex` has no backreferences, so the "same entry variable" constraint that
+# used to be `\1` is an equality check on the captured groups.
 
 import std/[os, strformat, strutils]
-import std/nre
+import regex
 
 const EXPECTED_PATCHES = 1
+
+# Return-style anchor (v1.8089+):
+#   if(X.scope==="user")return this.entryToPluginInfo(A,X,B,C);
+# v1.26832.0 quotes the scope literal with backticks, hence the ["`] class.
+# Groups: 0 = X (entry), 1 = A, 2 = X again (must equal group 0), 3 = B, 4 = C.
+const ANCHOR_RETURN =
+  re2"""if\(([\w$]+)\.scope===["`]user["`]\)return this\.entryToPluginInfo\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\);"""
+
+# Push-style anchor (older builds):
+#   if(X.scope==="user"){Y.push(this.entryToPluginInfo(A,X,B,C));continue}
+# Groups: 0 = X, 1 = Y, 2 = A, 3 = X again (must equal group 0), 4 = B, 5 = C.
+const ANCHOR_PUSH =
+  re2"""if\(([\w$]+)\.scope===["`]user["`]\)\{([\w$]+)\.push\(this\.entryToPluginInfo\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)\);continue\}"""
+
+# Positive end-state (Rule 6): our `||X.scope==="project"&&X.projectPath` arm.
+const ALREADY_PATCHED =
+  re2"""if\([\w$]+\.scope==="user"\|\|[\w$]+\.scope==="project"&&[\w$]+\.projectPath"""
+
+proc firstWithSameEntry(
+    s: string, pattern: Regex2, entryGroup: int
+): (bool, RegexMatch2) =
+  ## First match whose repeated entry capture equals group 0 (the `\1` constraint).
+  for m in s.findAll(pattern):
+    if s[m.group(0)] == s[m.group(entryGroup)]:
+      return (true, m)
+  (false, default(RegexMatch2))
+
+proc homedirArm(e: string): string =
+  e & ".scope===\"project\"&&" & e & ".projectPath&&" &
+    "process.env.HOME&&require(\"path\").normalize(" & e &
+    ".projectPath)===require(\"path\").normalize(process.env.HOME)"
 
 proc apply*(input: string): string =
   result = input
   var patchesApplied = 0
 
   # B: scope normalization in getAllLocalPluginsWithResolver
-  if result.contains(
-    re"""if\([\w$]+\.scope===\"user\"\|\|[\w$]+\.scope===\"project\"\&\&[\w$]+\.projectPath"""
-  ):
+  if result.contains(ALREADY_PATCHED):
     echo "  [SKIP] B already patched"
     inc patchesApplied
   else:
-    # Try new pattern (v1.8089+): if(X.scope==="user")return this.entryToPluginInfo(A,X,B,C);
-    # v1.26832.0 quotes the scope literal with backticks, hence the ["`] class.
-    let mNew = result.find(
-      re"""if\(([\w$]+)\.scope===["`]user["`]\)return this\.entryToPluginInfo\(([\w$]+),\1,([\w$]+),([\w$]+)\);"""
-    )
-    # Try old pattern: if(X.scope==="user"){Y.push(this.entryToPluginInfo(A,X,B,C));continue}
-    let mOld = result.find(
-      re"""if\(([\w$]+)\.scope===["`]user["`]\)\{([\w$]+)\.push\(this\.entryToPluginInfo\(([\w$]+),\1,([\w$]+),([\w$]+)\)\);continue\}"""
-    )
-    if mNew.isSome:
-      let c = mNew.get.captures
-      let (e, g, n, b) = (c[0], c[1], c[2], c[3])
-      let homedir =
-        e & ".scope===\"project\"&&" & e & ".projectPath&&" &
-        "process.env.HOME&&require(\"path\").normalize(" & e &
-        ".projectPath)===require(\"path\").normalize(process.env.HOME)"
+    let (foundNew, mNew) = result.firstWithSameEntry(ANCHOR_RETURN, 2)
+    let (foundOld, mOld) = result.firstWithSameEntry(ANCHOR_PUSH, 3)
+    if foundNew:
+      let e = result[mNew.group(0)]
+      let g = result[mNew.group(1)]
+      let n = result[mNew.group(3)]
+      let b = result[mNew.group(4)]
       result =
-        result[0 ..< mNew.get.matchBounds.a] & "if(" & e & ".scope===\"user\"||" &
-        homedir & ")return this.entryToPluginInfo(" & g & ",{..." & e &
-        ",scope:\"user\"}," & n & "," & b & ");" &
-        result[mNew.get.matchBounds.b + 1 .. ^1]
+        result[0 ..< mNew.boundaries.a] & "if(" & e & ".scope===\"user\"||" &
+        homedirArm(e) & ")return this.entryToPluginInfo(" & g & ",{..." & e &
+        ",scope:\"user\"}," & n & "," & b & ");" & result[mNew.boundaries.b + 1 .. ^1]
       echo "  [OK] B scope normalization (1 match, return-style)"
       inc patchesApplied
-    elif mOld.isSome:
-      let c = mOld.get.captures
-      let (e, s, o, n, i) = (c[0], c[1], c[2], c[3], c[4])
-      let homedir =
-        e & ".scope===\"project\"&&" & e & ".projectPath&&" &
-        "process.env.HOME&&require(\"path\").normalize(" & e &
-        ".projectPath)===require(\"path\").normalize(process.env.HOME)"
+    elif foundOld:
+      let e = result[mOld.group(0)]
+      let s = result[mOld.group(1)]
+      let o = result[mOld.group(2)]
+      let n = result[mOld.group(4)]
+      let i = result[mOld.group(5)]
       result =
-        result[0 ..< mOld.get.matchBounds.a] & "if(" & e & ".scope===\"user\"||" &
-        homedir & "){" & s & ".push(this.entryToPluginInfo(" & o & ",{..." & e &
+        result[0 ..< mOld.boundaries.a] & "if(" & e & ".scope===\"user\"||" &
+        homedirArm(e) & "){" & s & ".push(this.entryToPluginInfo(" & o & ",{..." & e &
         ",scope:\"user\"}," & n & "," & i & "));continue}" &
-        result[mOld.get.matchBounds.b + 1 .. ^1]
+        result[mOld.boundaries.b + 1 .. ^1]
       echo "  [OK] B scope normalization (1 match, push-style)"
       inc patchesApplied
     else:

@@ -4,6 +4,18 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-21
 
+### Blank main window after a renderer clean-exit (#287)
+
+- **The main view reloads itself when its renderer exits cleanly without the app asking.** On niri
+  Wayland with 10-16 Code sessions open the renderer went away every day or two with
+  `reason: 'clean-exit', exitCode: 0`; upstream drops that reason without reloading, so the window stayed
+  blank, Ctrl+R and F5 had nothing left to reach, and only a full restart - ending every Code session -
+  recovered. A real crash already took the reload path. New `fix_renderer_clean_exit_reload.nim`
+  (linux): a clean-exit while the app is not quitting now goes through upstream's own reload path; one
+  during quit, relaunch, Reset App Data or a view teardown stays suppressed, and after three reloads in
+  ten minutes it falls back to upstream behavior. Each decision is one `[cdb-renderer]` line in
+  `claude-patches.log`. Thanks to @ToRvaLDz for the report and the log analysis.
+
 ### Claude Desktop 3.1623.0 (#285)
 
 - **Built on upstream 3.1623.0** (Electron 44.9.0, bundled Claude Code 2.1.304). The new major number
@@ -25,6 +37,17 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   managed-settings keys of this version, including `quickEntryDefaultShortcut`, `releaseChannel`,
   `skillScanningEnabled`, `sshConfigs` and `disableDesktopLocalSessions`; the five unnamed "Reserved
   setting" keys are shown read-only.
+- **Computer Use is back for Team and Enterprise accounts.** The app now reports Computer Use as rolled
+  out (`computerUseRollout`) next to `computerUse`; claude.ai reads that key, so accounts without a web
+  rollout get the Settings -> System -> Computer use switch again instead of "Computer use isn't available
+  on the Team and Enterprise plans yet", and Code sessions and Cowork tasks on this computer carry the
+  tools once it is on. An organization compliance lock still switches it off.
+- **Build:** the Personal Plugins, window bounds, tray icon, Quick Entry ready-to-show, GrowthBook overrides
+  and profile window title patches no longer need the legacy PCRE1 library at run time (ported from
+  `std/nre` to the pure-Nim `regex` package, byte-identical output); the Personal Plugins harness now prints
+  the patch binary's output when a check fails.
+- **Docs:** Cowork VM debug tags refreshed to the native backend's `[VM:start]`/`[VM:steps]` lines, the
+  kernel-upgrade-without-reboot VM boot failure documented, Electron stamp 44.9.0.
 
 ## 2026-10-20
 

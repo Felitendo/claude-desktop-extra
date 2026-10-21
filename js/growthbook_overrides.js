@@ -697,7 +697,7 @@
     "    // \"3656976882\": true, // skills availability gate - tracks the blocked_by_org_admin state per account (new in v2.7032.0)",
     "    // \"3664723602\": true, // Code-session BROWSER shim - routes session browser opens through the ccd-br socket (honours authentication.disableDeepLinks) (new in v2.7032.0)",
     "    // \"3675492805\": true, // Cowork EDR integration vendor list (read as an evaluated value, sibling of 580613960) (value flag); also a 3p remote key (new in v3.1623.0)",
-    "    // \"3676943315\": true, // Computer Use on Linux - upstream's own Linux CU gate (status 'not yet enabled for this account' when off); our CU patch forces CU regardless (new in v2.19675.1)",
+    "    // \"3676943315\": true, // Computer Use on Linux - upstream's own Linux CU gate (status 'not yet enabled for this account' when off). Not needed: fix_computer_use_linux forces the main-process tool registration and enable_local_agent_mode forces the computerUseRollout feature claude.ai reads (new in v2.19675.1)",
     "    // \"3691521536\": true, // Stealth updater - nudge updates when no active sessions",
     "    // \"3699048477\": true, // launch-preview availability chain (ON turns it off) and browser_batch when the CLI runs on an SSH host (new since v2.37337.1)",
     "    // \"3705360580\": true, // CCD OAuth 401 refresh via readCcdOauthToken path",

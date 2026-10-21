@@ -27,7 +27,7 @@ import {
   accessSync,
   constants,
 } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -86,15 +86,29 @@ class Pm{entryToPluginInfo(e,t,n,r){return{id:e,name:e.split("@")[0]||e,installP
 const B_IDEMPOTENCY_RE =
   /if\([\w$]+\.scope==="user"\|\|[\w$]+\.scope==="project"&&[\w$]+\.projectPath/;
 
+// Every patch run is kept (exit code, combined stdout+stderr) and dumped when a
+// check fails: a binary that dies before printing anything (e.g. a std/nre
+// build whose PCRE1 dlopen fails on the runner) would otherwise show up only
+// as "first run exits 1" with no output.
+const patchRuns = [];
 function runPatch(file) {
-  try {
-    const out = execFileSync(PATCH_BIN, [file], { encoding: "utf8", stdio: "pipe" });
-    return { status: 0, out };
-  } catch (e) {
-    return {
-      status: typeof e.status === "number" ? e.status : -1,
-      out: String(e.stdout || "") + String(e.stderr || ""),
-    };
+  const r = spawnSync(PATCH_BIN, [file], { encoding: "utf8" });
+  const run = {
+    file,
+    status: r.status === null ? -1 : r.status,
+    signal: r.signal || null,
+    error: r.error ? String(r.error.message || r.error) : null,
+    out: String(r.stdout || "") + String(r.stderr || ""),
+  };
+  patchRuns.push(run);
+  return run;
+}
+function dumpPatchRuns() {
+  console.log(`\n--- ${PATCH_BIN}: ${patchRuns.length} run(s), stdout+stderr ---`);
+  for (const r of patchRuns) {
+    const tail = r.signal ? ` signal=${r.signal}` : r.error ? ` error=${r.error}` : "";
+    console.log(`[exit ${r.status}${tail}] ${r.file}`);
+    console.log(r.out.trim() === "" ? "  (no output)" : r.out.replace(/\s+$/, ""));
   }
 }
 
@@ -208,5 +222,6 @@ try {
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {
   for (const f of failures) console.log("  - " + f);
+  dumpPatchRuns();
   process.exit(1);
 }

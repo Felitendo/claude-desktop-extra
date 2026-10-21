@@ -66,6 +66,16 @@ sed -i 's|^Exec=claude-desktop|Exec=env CLAUDE_USE_XWAYLAND=1 CLAUDE_DISABLE_GPU
 
 Swap in whichever variables worked for you. Delete the file to return to defaults. All variables: [environment-variables.md](environment-variables.md).
 
+## Main window goes blank and Ctrl+R does nothing
+
+The main view's renderer exited and nothing is left to receive the reload key. The app reloads the view on its own when the renderer crashed (`reason: 'crashed'`) and, since [#287](https://github.com/patrickjaja/claude-desktop-extra/issues/287), when it exited cleanly without the app asking for it (`reason: 'clean-exit', exitCode: 0` - seen on niri Wayland with many Code sessions open). Check that it did:
+
+```bash
+grep -h "render process gone\|cdb-renderer" ~/.config/Claude/logs/main.log ~/.config/Claude/logs/claude-patches.log | tail
+```
+
+`[cdb-renderer] ... handing it to the reload path` followed by `Main webview render process gone` means the view was reloaded. `leaving it suppressed` names the reason: the app was quitting, or the view had already exited cleanly three times in ten minutes - a renderer that keeps exiting is left alone, as upstream does, and a restart is needed. Code sessions are not part of the main view and continue across its reload, as they do after a crash. If this hits you regularly, attach those lines to the issue.
+
 ## Global shortcut not working on KDE Plasma
 
 Electron registers shortcuts via `kglobalaccel`. Stale entries from crashed or killed sessions block new registrations silently.

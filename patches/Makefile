@@ -57,6 +57,8 @@ linux/fix_keep_awake_linux: ../js/keep_awake_inhibit.js
 
 linux/fix_quick_entry_kde_portal_rebind: ../js/kde_global_shortcuts_rebind.js
 
+linux/fix_renderer_clean_exit_reload: ../js/renderer_clean_exit.js
+
 linux/fix_second_instance_diag: ../js/second_instance_diag.js
 
 linux/fix_startup_settings: ../js/startup_session_restore_gate.js

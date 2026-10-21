@@ -4,7 +4,7 @@
 
 This project repackages Anthropic's **official Claude Desktop Linux `.deb`** for the distros Anthropic does not ship (Arch via our own pacman repo, Fedora/RHEL via RPM, NixOS, AppImage, plus our own Debian/Ubuntu `.deb`). It applies JavaScript patches to the official build's `app.asar` to add Linux-only value-adds (Computer Use, custom themes, multi-profile, Quick Entry) and Linux fixes.
 
-The official `.deb` (apt repo `https://downloads.claude.ai/claude-desktop/apt`) bundles its own **Electron** (44.7.0 as of v2.37337.1; authoritative source: the deb tree's `usr/lib/claude-desktop/version` file) and a **native Cowork VM backend**. We download it, verify GPG + SHA256, extract it, patch its `app.asar`, and repackage. We do not pin Electron or rebuild node-pty (both ship pre-built in the `.deb`).
+The official `.deb` (apt repo `https://downloads.claude.ai/claude-desktop/apt`) bundles its own **Electron** (44.9.0 as of v3.1623.0; authoritative source: the deb tree's `usr/lib/claude-desktop/version` file) and a **native Cowork VM backend**. We download it, verify GPG + SHA256, extract it, patch its `app.asar`, and repackage. We do not pin Electron or rebuild node-pty (both ship pre-built in the `.deb`).
 
 **Layout invariant (2026-07-13):** every package ships the `.deb`'s `usr/lib/claude-desktop/` tree **verbatim** (binary renamed `claude-desktop` -> `claude`; patched `resources/app.asar` exe-adjacent; our CU bridges added to `resources/`). Electron auto-loads the adjacent asar - the official build's `OnlyLoadAppFromAsar` + `EnableEmbeddedAsarIntegrityValidation` fuses are on (integrity is not enforced on Linux, which is why a patched asar boots). The launcher passes NO asar on the command line, so `process.resourcesPath` and `app.isPackaged` behave exactly as on the stock Anthropic `.deb`. Never add a patch that redirects resource paths; put bundled files at their upstream `resources/` position instead. On NixOS the nixpkgs Electron dist is merged with our `resources/` into one directory to preserve the same adjacency.
 
@@ -200,7 +200,7 @@ Runtime logs are in `~/.config/Claude/logs/`. When 3P mode is active (an `infere
 
 ```
 patches/           # Nim patch sources (.nim) + Makefile, compiled to native binaries (ls patches/*/*.nim)
-patches/linux/     #   Linux compatibility - always on, not user-configurable (33)
+patches/linux/     #   Linux compatibility - always on, not user-configurable (35)
 patches/community/ #   Opt-in features, each with a switch in Settings -> Extra -> Community Features (17)
 patches/core/      #   Always-on infrastructure: Extra settings pages, theme engine, GrowthBook overrides, multi-profile (7)
 js/                # Shared JS snippets embedded by Nim patches via staticRead ("../../js/..." from a patch)
