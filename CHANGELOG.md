@@ -15,7 +15,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   package manager replaced the app, and `disableAutoUpdates`, work as before. New
   `fix_update_check_own_releases.nim` (linux).
 
-### The window no longer raises itself under focus-follows-mouse
+### The window no longer raises itself under focus-follows-mouse (thanks @balwierz, #292)
 
 - **Moving the pointer over Claude no longer brings it to the front.** With focus-follows-mouse and
   raise-on-hover turned off (KWin, Cinnamon, ...), Claude raised itself above every other window on each
