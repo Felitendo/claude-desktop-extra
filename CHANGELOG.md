@@ -15,6 +15,21 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   package manager replaced the app, and `disableAutoUpdates`, work as before. New
   `fix_update_check_own_releases.nim` (linux).
 
+### The window no longer raises itself under focus-follows-mouse
+
+- **Moving the pointer over Claude no longer brings it to the front.** With focus-follows-mouse and
+  raise-on-hover turned off (KWin, Cinnamon, ...), Claude raised itself above every other window on each
+  hover, and no window manager setting or rule stopped it. Upstream moves keyboard focus into its web view
+  from the window's `focus` event; on Linux, Electron's `webContents.focus()` first re-activates the window,
+  which goes out as an xdg_activation request on Wayland or `_NET_ACTIVE_WINDOW` on X11, and the window
+  manager answers with a raise. New `fix_focus_follows_mouse_raise.nim` (linux) skips that call when the
+  window is already active and the view already has focus; the main window and popouts are covered. So that
+  the first hover after launch also finds a focused view, the view is focused once after its first load
+  while the window is still inactive (KWin denies that request, as it does the launch one). Tray,
+  second-instance and notification activations are unchanged and still raise the window. Each decision is
+  one `[focus-no-raise]` line in `claude-patches.log`
+  ([anthropics/claude-code#75905](https://github.com/anthropics/claude-code/issues/75905)).
+
 ## 2026-10-21
 
 ### Blank main window after a renderer clean-exit (#287)
