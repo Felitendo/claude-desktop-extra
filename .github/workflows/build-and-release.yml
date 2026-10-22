@@ -1202,6 +1202,7 @@ jobs:
       - name: Build AppImage (${{ matrix.arch }})
         env:
           VERSION: ${{ needs.check-version.outputs.version }}
+          PKGREL: ${{ needs.check-version.outputs.pkgrel }}
         run: |
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
             TARBALL="claude-desktop-${VERSION}-linux-aarch64.tar.gz"
@@ -1211,7 +1212,7 @@ jobs:
             ARCH_FLAG=""
           fi
 
-          bash packaging/appimage/build-appimage.sh $ARCH_FLAG "$TARBALL" ./dist
+          bash packaging/appimage/build-appimage.sh $ARCH_FLAG "$TARBALL" ./dist "$PKGREL"
 
       - name: Test AppImage
         run: |

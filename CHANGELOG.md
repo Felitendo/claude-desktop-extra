@@ -2,6 +2,19 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-22
+
+### "Update available" follows this project's releases
+
+- **The sidebar's "Update available" now shows when a newer claude-desktop-extra release exists, and
+  clicking it opens the install section for your package format.** Upstream compared against Anthropic's
+  apt repository, so the button appeared while our packages had not caught up yet, never showed our patch
+  releases (`v3.1623.1-2`), and its link led to apt instructions. The check now reads this project's latest
+  GitHub release against the release and package format recorded in the package at build time, and the
+  click opens the README at the pacman, deb, rpm, Nix or AppImage section. "Restart to update" after the
+  package manager replaced the app, and `disableAutoUpdates`, work as before. New
+  `fix_update_check_own_releases.nim` (linux).
+
 ## 2026-10-21
 
 ### Blank main window after a renderer clean-exit (#287)

@@ -69,7 +69,13 @@ let
   # v<version>-<pkgrel> for re-releases) and its assets are never overwritten
   # afterwards, so this URL is immutable and a pinned flake.lock keeps fetching
   # byte-identical content forever (issue #214).
-  releaseTag = if pkgrel == "1" then "v${version}" else "v${version}-${pkgrel}";
+  # The shape check also guards the release stamp written in installPhase.
+  releaseTag =
+    assert lib.assertMsg (builtins.match "[0-9]+\\.[0-9]+\\.[0-9]+" version != null)
+      "claude-desktop-extra: version '${version}' is not X.Y.Z";
+    assert lib.assertMsg (builtins.match "[1-9][0-9]*" pkgrel != null)
+      "claude-desktop-extra: pkgrel '${pkgrel}' is not a positive integer";
+    if pkgrel == "1" then "v${version}" else "v${version}-${pkgrel}";
   # The release tarball ships the official Claude Desktop tree verbatim under
   # claude-desktop/ (Electron runtime + our patched resources/app.asar + CU
   # bridges), extracted from Anthropic's Linux .deb. On NixOS, however, that
@@ -274,6 +280,14 @@ stdenvNoCC.mkDerivation {
     # NOT used on Nix.
     rm -rf $out/lib/claude-desktop/resources
     cp -r claude-desktop/resources $out/lib/claude-desktop/resources
+
+    # Release stamp for the in-app update check: the release tag (releaseTag,
+    # the same tag src is fetched from) and the package format, which picks the
+    # README install section the "Update available" button opens. Exe-adjacent
+    # resources/, next to app.asar (process.resourcesPath).
+    printf '{"tag":"%s","format":"nix"}\n' '${releaseTag}' \
+      > $out/lib/claude-desktop/resources/cdb-release.json
+    chmod 644 $out/lib/claude-desktop/resources/cdb-release.json
 
     # Install launcher script (handles --toggle, --install-gnome-hotkey, --diagnose
     # and all Wayland/X11 detection, GPU fallback, etc.)

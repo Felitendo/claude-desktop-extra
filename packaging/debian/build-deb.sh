@@ -83,6 +83,15 @@ VERSION=$(basename "$TARBALL_PATH" | sed -E 's/claude-desktop-([0-9]+\.[0-9]+\.[
 DEB_VERSION="${VERSION}-${PKGREL}"
 log_info "Building Debian package for version: $DEB_VERSION (arch: $DEB_ARCH)"
 
+# Release tag for the stamp below: v<version>, or v<version>-<pkgrel> for a
+# re-release (the tag scheme of our GitHub releases).
+if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! $PKGREL =~ ^[1-9][0-9]*$ ]]; then
+    log_error "version '$VERSION' / pkgrel '$PKGREL' not in X.Y.Z / N form (tarball name: $(basename "$TARBALL_PATH"))"
+    exit 1
+fi
+RELEASE_TAG="v${VERSION}"
+[ "$PKGREL" = 1 ] || RELEASE_TAG="v${VERSION}-${PKGREL}"
+
 # Create work directory
 WORK_DIR=$(mktemp -d)
 DEB_ROOT="$WORK_DIR/claude-desktop-extra_${DEB_VERSION}_${DEB_ARCH}"
@@ -118,6 +127,14 @@ if [ -f "$DEB_ROOT/usr/lib/claude-desktop/chrome-sandbox" ]; then
     chmod 4755 "$DEB_ROOT/usr/lib/claude-desktop/chrome-sandbox"
     log_info "Set SUID permission on chrome-sandbox"
 fi
+
+# Release stamp for the in-app update check: the release tag and the package
+# format, which picks the README install section the "Update available" button
+# opens. Exe-adjacent resources/, next to app.asar (process.resourcesPath).
+printf '{"tag":"%s","format":"deb"}\n' "$RELEASE_TAG" \
+    > "$DEB_ROOT/usr/lib/claude-desktop/resources/cdb-release.json"
+chmod 0644 "$DEB_ROOT/usr/lib/claude-desktop/resources/cdb-release.json"
+log_info "Wrote release stamp: $RELEASE_TAG (deb)"
 
 # Install launcher (full launcher from tarball with Wayland/X11 detection,
 # GPU fallback, SingletonLock cleanup, and logging)

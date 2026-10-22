@@ -27,6 +27,7 @@ Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P inference - is An
 x86_64 and aarch64 are supported everywhere except Nix (x86_64 only). **Cowork** (the agent VM) is optional and needs QEMU/KVM, see [Cowork setup](#cowork-setup-needs-devkvm). Details per distro:
 
 <a name="arch-linux--manjaro-pacman-repository"></a>
+<a id="install-pacman"></a>
 <details>
 <summary><b>Arch Linux / Manjaro (AUR or pacman repository)</b></summary>
 
@@ -82,6 +83,7 @@ makepkg -si
 </details>
 
 <a name="debian--ubuntu-apt-repository"></a>
+<a id="install-deb"></a>
 <details>
 <summary><b>Debian / Ubuntu (APT Repository)</b></summary>
 
@@ -98,6 +100,7 @@ Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/rele
 </details>
 
 <a name="fedora--rhel-dnf-repository"></a>
+<a id="install-rpm"></a>
 <details>
 <summary><b>Fedora / RHEL (DNF Repository)</b></summary>
 
@@ -112,6 +115,7 @@ Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/rele
 </details>
 
 <a name="nixos--nix"></a>
+<a id="install-nix"></a>
 <details>
 <summary><b>NixOS / Nix</b></summary>
 
@@ -121,6 +125,7 @@ Cowork tools (`qemu`, `virtiofsd`, OVMF) are baked into the closure (`.override 
 </details>
 
 <a name="appimage-any-distro"></a>
+<a id="install-appimage"></a>
 <details>
 <summary><b>AppImage (Any Distro)</b></summary>
 
@@ -243,7 +248,7 @@ Override Anthropic's server-side feature flags in `~/.config/Claude/claude-deskt
 
 ## Patches
 
-We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (17 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (7, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (35, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
+We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (17 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (7, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (36, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
 
 ## Command-line flags
 
