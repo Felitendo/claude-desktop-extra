@@ -153,6 +153,40 @@ function rememberDisplayIdMappings(displays) {
   }
 }
 
+// Bridge CLI contract exit codes (docs/computer-use-bridge-contract.md):
+// 3 = the target monitor is not shared in the live portal session, 4 = no live
+// session (the session daemon is gone). Consumers switch on these; the text
+// matching is only the fallback for bridges below contract 1.
+const BRIDGE_EXIT_NOT_SHARED = 3
+const BRIDGE_EXIT_NO_SESSION = 4
+
+// A bridge error about a monitor the user did not share in the portal consent
+// dialog. Contract-1 bridges exit 3 with "monitor <ID> (<geometry>) is not
+// shared in the portal session (shared: <list>)"; older kwin-portal-bridge
+// builds said "no portal stream matched screen `<id>`". Users only have
+// `claude-desktop`, and this text is what the model reads: rewrite it into an
+// instruction for the user. Text that does not parse keeps its wording and gets
+// the instruction appended - always on exit 3, otherwise when it names the
+// condition. Twin: _cuNotSharedText in js/cu_linux_executor.js.
+const RESET_SCREEN_SHARING_HINT = 'Ask the user to run `claude-desktop --reset-screen-sharing`, then share all monitors when the screen-sharing dialog appears.'
+
+export function notSharedText(message, isNotShared = false) {
+  const text = String(message ?? '')
+  let m = text.match(/monitor (\S+) \([^)]*\) is not shared in the portal session \(shared: ([^)]*)\)(?:;[^\n]*?forget-session[^\n]*)?/)
+  if (m) {
+    return `${text.slice(0, m.index)}Monitor ${m[1]} is not shared with Claude (shared: ${m[2].trim() || 'none'}). ${RESET_SCREEN_SHARING_HINT}${text.slice(m.index + m[0].length)}`
+  }
+  m = text.match(/no portal stream matched screen `([^`]+)`/)
+  if (m) {
+    return `${text.slice(0, m.index)}Monitor ${m[1]} is not shared with Claude. ${RESET_SCREEN_SHARING_HINT}${text.slice(m.index + m[0].length)}`
+  }
+  if (isNotShared || /no portal stream matched|is not shared in the portal session|forget-session/.test(text)) {
+    const trimmed = text.replace(/\s+$/, '')
+    return `${trimmed}${/[.!?]$/.test(trimmed) ? ' ' : '. '}${RESET_SCREEN_SHARING_HINT}`
+  }
+  return null
+}
+
 async function execBridge(command, args, opts = {}) {
   const spec = buildBridgeCommand(command, args)
   const timeout = opts.timeoutMs ?? bridgeTimeoutMs(command)
@@ -185,7 +219,25 @@ async function execBridge(command, args, opts = {}) {
       detail,
       args: spec.args,
     })
-    throw new Error(`[kwin-portal-bridge] ${command} failed: ${detail}`)
+    // The session daemon is gone while we still hold its session open:
+    // `claude-desktop --reset-screen-sharing` (the bridge's forget-session)
+    // ended it. Forget the memoized start so the next command starts one fresh
+    // session; this one is not retried (no consent dialog behind the model's
+    // back for a command it already got an answer to).
+    const exitCode = typeof error?.code === 'number' ? error.code : null
+    if (
+      KWIN_PORTAL_COMMANDS.has(command)
+      && (exitCode === BRIDGE_EXIT_NO_SESSION || /no active portal session/.test(detail))
+      && bridgeSessionActive
+      && sessionReadyPromise
+      && !sessionStopPromise
+    ) {
+      sessionReadyPromise = null
+      globalThis.__cdbDiag('[linux-executor] session daemon is gone (screen sharing reset?); the next command starts a new session')
+      throw new Error(`[kwin-portal-bridge] ${command} failed: ${detail} - the screen-sharing session was ended; retry the action to start a new one (the screen-sharing dialog may appear)`)
+    }
+    const rewritten = notSharedText(detail, exitCode === BRIDGE_EXIT_NOT_SHARED)
+    throw new Error(`[kwin-portal-bridge] ${command} failed: ${rewritten ?? detail}`)
   }
 }
 

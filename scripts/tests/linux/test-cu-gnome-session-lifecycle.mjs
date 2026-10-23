@@ -39,6 +39,11 @@ const EXECUTOR = path.join(ROOT, "js", "cu_linux_executor.js");
 // Electron displays; displays[displays.primaryIdx || 0] is Electron's primary.
 // delays (optional, mutable) maps a subcommand to its reply delay in ms;
 // reply.onCall(sub, args), when set, computes stdout at CALL time instead.
+// The GNOME session daemon's runtime files, which the executor checks before a
+// portal command to notice a daemon that `claude-desktop --reset-screen-sharing`
+// ended or that crashed: socket present by default, no pidfile (pid null).
+// Case [22] changes them.
+const rigSocket = { present: true, pid: null };
 function makeRig(consentMs, reply, displays, delays) {
   const log = [], argv = [];
   const cp = {
@@ -78,7 +83,11 @@ function makeRig(consentMs, reply, displays, delays) {
     if (id === "electron") return electron;
     if (id === "path") return path;
     if (id === "os") return os;
-    if (id === "fs") return { readFileSync: () => Buffer.alloc(0), writeFileSync(){}, unlinkSync(){}, existsSync: () => false, renameSync(){}, accessSync(){ throw new Error("no"); }, readdirSync: () => [], statSync: () => ({ isDirectory: () => false }) };
+    if (id === "fs") return {
+      readFileSync: (p) => String(p).endsWith("/gnome-portal-bridge/session.pid") ? String(rigSocket.pid) : Buffer.alloc(0),
+      writeFileSync(){}, unlinkSync(){},
+      existsSync: (p) => String(p).endsWith("/gnome-portal-bridge/session.sock") ? rigSocket.present
+        : String(p).endsWith("/gnome-portal-bridge/session.pid") ? rigSocket.pid !== null : false, renameSync(){}, accessSync(){ throw new Error("no"); }, readdirSync: () => [], statSync: () => ({ isDirectory: () => false }) };
     throw new Error("unexpected require " + id);
   };
   globalThis.__cdbDiag = (m) => log.push("DIAG " + String(m));
@@ -558,6 +567,308 @@ console.log("\n[19] KWin twin (js/executor_linux.js): same failed-start release"
       await ex.__setLockHeld(false).catch(() => {});
       await sleep(20);
       ok(kw.filter(c => c === "session-end").length === 1, "and only once", kw.join(" "));
+    } finally { console.debug = savedDebug; delete globalThis.__cuKwinBridgeBin; }
+  }
+}
+
+// ── A monitor the user did not share: the error tells the model to ask the user ──
+// The bridges stay generic (GNOME names its own `forget-session`); the executors
+// rewrite the remedy into `claude-desktop --reset-screen-sharing`.
+const RESET_HINT = "Ask the user to run `claude-desktop --reset-screen-sharing`, then share all monitors when the screen-sharing dialog appears.";
+const GNOME_NOT_SHARED = "monitor HDMI-1 (1920,0 2560x1440) is not shared in the portal session (shared: eDP-1 at 0,0 1920x1080); " +
+  "run `gnome-portal-bridge forget-session`, then start Computer Use again and select all monitors in the dialog";
+const shotText = async (input) => {
+  try { const r = await handler("screenshot", input); return (r && r.content && r.content[0] && r.content[0].text) || JSON.stringify(r); }
+  catch (e) { return "THREW " + e.message; }
+};
+
+console.log("\n[20] GNOME: a screenshot of an unshared monitor names the reset flag");
+{
+  const rig = makeRig(20, (sub) => {
+    if (sub === "screens") return screensJson([true, false]);
+    if (sub === "zoom") throw new Error("Command failed: /res/gnome-portal-bridge zoom --display HDMI-1\n" + GNOME_NOT_SHARED);
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  const text = await shotText({ display_number: 1 });
+  ok(text.includes("Monitor HDMI-1 is not shared with Claude (shared: eDP-1 at 0,0 1920x1080). " + RESET_HINT),
+     "the model reads the monitor, the shared list and the user instruction", text);
+  ok(!text.includes("forget-session"), "the bridge-internal remedy is gone");
+  ok(!text.includes("every capture tier failed"), "the cause is not buried under a capture-tier fallback");
+  rig.restore();
+}
+
+console.log("\n[21] GNOME: not-shared text that does not parse keeps its wording, the instruction is appended");
+{
+  const odd = "monitor HDMI-1 is not shared in the portal session; run `gnome-portal-bridge forget-session`";
+  const rig = makeRig(20, (sub) => {
+    if (sub === "screens") return screensJson([true, false]);
+    if (sub === "zoom") throw new Error("Command failed: zoom\n" + odd);
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  const text = await shotText({ display_number: 1 });
+  ok(text.includes(odd + ". " + RESET_HINT), "original text + the instruction", text);
+  rig.restore();
+}
+{
+  // An unrelated bridge failure is left alone.
+  const rig = makeRig(20, (sub) => {
+    if (sub === "screens") return screensJson([true, false]);
+    if (sub === "zoom") throw new Error("Command failed: zoom\nPipeWire stream stalled");
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  const text = await shotText({ display_number: 1 });
+  ok(!text.includes("reset-screen-sharing"), "an unrelated failure gets no reset instruction", text);
+  rig.restore();
+}
+
+console.log("\n[22] GNOME: a session daemon ended by --reset-screen-sharing is replaced by ONE new session");
+{
+  const rig = shareRig([true, true]);
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await handler("screenshot", {});
+  ok(countCalls(rig, "session-start") === 1, "one session-start for the lock");
+  await handler("screenshot", {});
+  ok(countCalls(rig, "session-start") === 1, "a live daemon (socket present) is reused", String(countCalls(rig, "session-start")));
+  rigSocket.present = false;                       // forget-session ended the daemon
+  try {
+    const r = await handler("screenshot", {});
+    ok(r && r.content && r.content[0] && r.content[0].type === "image", "the next screenshot still captures");
+    ok(countCalls(rig, "session-start") === 2, "after a fresh session-start", String(countCalls(rig, "session-start")));
+    ok(rig.log.some(l => l.includes("session daemon is gone")), "and the restart is logged");
+  } finally { rigSocket.present = true; rig.restore(); }
+}
+
+console.log("\n[22b] GNOME, sync input after a reset: no blocking session-start, one background start");
+{
+  // The grant is gone, so session-start means a consent dialog: the sync
+  // backstop (8 s, main process blocked) must not run it.
+  const rig = shareRig([true, true]);
+  const sync = [];
+  rig.cp.execFileSync = (bin, args) => {
+    const base = path.basename(String(bin));
+    if (base === "which" || base === "systemd-detect-virt" || base === "pgrep") throw new Error("not found");
+    sync.push((args || [])[0]);
+    return "{}";
+  };
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await rig.ex.moveMouse(5, 5);
+  ok(sync.join(" ") === "pointer-move", "a live session: the move goes straight to the bridge", sync.join(" "));
+  rigSocket.present = false;                       // forget-session ended the daemon
+  try {
+    let err = null;
+    try { await rig.ex.moveMouse(5, 5); } catch (e) { err = e; }
+    ok(err && /The screen-sharing session was reset .*Ask the user to approve the screen-sharing dialog, then retry the action\./.test(err.message),
+       "the model is told the user must approve the dialog", err && err.message);
+    ok(!sync.includes("session-start"), "no blocking session-start on the main process", sync.join(" "));
+    ok(sync.filter(c => c === "pointer-move").length === 1, "the move itself is not sent", sync.join(" "));
+    ok(countCalls(rig, "session-start") === 2, "one background session-start (full consent budget)", String(countCalls(rig, "session-start")));
+    rigSocket.present = true;
+    await sleep(60);
+    await rig.ex.moveMouse(5, 5);
+    ok(sync.filter(c => c === "pointer-move").length === 2 && countCalls(rig, "session-start") === 2,
+       "once approved, the retry runs on the new session", sync.join(" "));
+  } finally { rigSocket.present = true; rig.restore(); }
+}
+
+console.log("\n[22c] GNOME: a crashed daemon (socket left behind, pid dead) is noticed; a live pid is not");
+{
+  const rig = shareRig([true, true]);
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  try {
+    rigSocket.pid = process.pid;                   // alive
+    await handler("screenshot", {});
+    ok(countCalls(rig, "session-start") === 1, "live pid: the session is reused", String(countCalls(rig, "session-start")));
+    rigSocket.pid = 0x3fffffff;                    // no such process (ESRCH)
+    await handler("screenshot", {});
+    ok(countCalls(rig, "session-start") === 2, "dead pid: a new session is started", String(countCalls(rig, "session-start")));
+  } finally { rigSocket.pid = null; rig.restore(); }
+}
+
+console.log("\n[22d] GNOME, contract exit codes: 4 recovers the session, 3 is rewritten without the old tail");
+{
+  const rig = shareRig([true, true]);
+  const sync = [];
+  rig.cp.execFileSync = (bin, args) => {
+    const base = path.basename(String(bin));
+    if (base === "which" || base === "systemd-detect-virt" || base === "pgrep") throw new Error("not found");
+    const sub = (args || [])[0];
+    sync.push(sub);
+    if (sub === "pointer-move" && sync.filter(c => c === "pointer-move").length === 1)
+      throw Object.assign(new Error("Command failed: pointer-move\nno live portal session"), { status: 4 });
+    if (sub === "pointer-move")
+      throw Object.assign(new Error("Command failed: pointer-move\nmonitor HDMI-1 (1920,0 2560x1440) is not shared in the portal session (shared: eDP-1 at 0,0 1920x1080)"), { status: 3 });
+    return "{}";
+  };
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  let err = null;
+  try { await rig.ex.moveMouse(5, 5); } catch (e) { err = e; }
+  ok(err && /The screen-sharing session was reset/.test(err.message), "exit 4: the reset message", err && err.message);
+  ok(countCalls(rig, "session-start") === 2 && !sync.includes("session-start"),
+     "exit 4: one background session-start, none blocking", String(countCalls(rig, "session-start")));
+  await sleep(60);
+  err = null;
+  try { await rig.ex.moveMouse(5, 5); } catch (e) { err = e; }
+  ok(err && err.message.includes("Monitor HDMI-1 is not shared with Claude (shared: eDP-1 at 0,0 1920x1080). " + RESET_HINT),
+     "exit 3 with the contract text (no bridge remedy): rewritten", err && err.message);
+  rig.restore();
+}
+{
+  const rig = makeRig(20, (sub) => {
+    if (sub === "screens") return screensJson([true, false]);
+    if (sub === "zoom") throw Object.assign(new Error("Command failed: zoom\nthe display is not in this session"), { code: 3 });
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  const text = await shotText({ display_number: 1 });
+  ok(text.includes("the display is not in this session. " + RESET_HINT), "exit 3 with text that does not parse: instruction appended", text);
+  rig.restore();
+}
+
+console.log("\n[22e] GNOME: session-start answering \"already active\" is that session, not a failure");
+{
+  let screensCalls = 0;
+  const rig = makeRig(20, (sub) => {
+    if (sub === "session-start") throw new Error("Command failed: session-start\na portal session is already active");
+    if (sub === "screens") { screensCalls++; return screensJson([true, true]); }
+    if (sub === "zoom") return ZOOM_OK;
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  const r = await handler("screenshot", {});
+  ok(r && r.content && r.content[0] && r.content[0].type === "image", "the screenshot captures on the existing session", JSON.stringify(r).slice(0, 120));
+  ok(countCalls(rig, "session-start") === 1, "no second start", String(countCalls(rig, "session-start")));
+  ok(!rig.log.some(l => l.includes("session-start failed")), "no failure logged, no portal-down latch");
+  rig.restore();
+}
+
+console.log("\n[22f] GNOME: an undeterminable runtime dir never concludes \"daemon gone\"; exit 4 still recovers");
+{
+  // Set-but-empty XDG_RUNTIME_DIR: contract bridges read /tmp, older ones a
+  // relative path; a relative value is unusable. Concluding "no socket" there
+  // would restart the session before every command against an older bridge.
+  const saved = process.env.XDG_RUNTIME_DIR;
+  for (const [label, value] of [["empty", ""], ["relative", "run/user"]]) {
+    let fail4 = false;
+    const rig = makeRig(20, (sub) => {
+      if (sub === "screens") return screensJson([true, true]);
+      if (sub === "zoom") {
+        if (fail4) { fail4 = false; throw Object.assign(new Error("Command failed: zoom\nno active portal session"), { code: 4 }); }
+        return ZOOM_OK;
+      }
+      return "{}";
+    }, EDISPLAYS);
+    resetShot();
+    rig.ex.__setLockHeld(true);
+    await sleep(60);
+    process.env.XDG_RUNTIME_DIR = value;
+    rigSocket.present = false;
+    try {
+      await handler("screenshot", {});
+      await handler("screenshot", {});
+      ok(countCalls(rig, "session-start") === 1, `${label} XDG_RUNTIME_DIR: no restart from a missing socket`, String(countCalls(rig, "session-start")));
+      fail4 = true;
+      const text = await shotText({});
+      ok(/The screen-sharing session was reset/.test(text) && countCalls(rig, "session-start") === 2,
+         `${label} XDG_RUNTIME_DIR: exit 4 still starts one new session`, text);
+    } finally {
+      rigSocket.present = true;
+      if (saved === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = saved;
+      rig.restore();
+    }
+  }
+}
+
+console.log("\n[23] KWin (js/executor_linux.js): not-shared rewrite and a vanished daemon");
+{
+  const kw = [];
+  let failWith = null;                             // stderr for the next portal command
+  let failCode = 1;                                // its exit code
+  const cpStub = {
+    execFile(bin, args, opts, cb) {
+      if (typeof opts === "function") { cb = opts; }
+      const sub = (args || [])[0];
+      kw.push(sub);
+      setTimeout(() => {
+        if (failWith && sub !== "session-start" && sub !== "session-end") {
+          const stderr = failWith, code = failCode; failWith = null; failCode = 1;
+          cb(Object.assign(new Error("Command failed"), { stderr, code }), "", "");
+          return;
+        }
+        cb(null, { stdout: "{}", stderr: "" });
+      }, 2);
+    },
+    spawnSync() { return { status: 0 }; }
+  };
+  let src = readFileSync(path.join(ROOT, "js", "executor_linux.js"), "utf8")
+    .replace("import { execFile as execFileCb, spawnSync } from 'node:child_process'", "const { execFile: execFileCb, spawnSync } = __cp")
+    .replace("import { screen as electronScreen } from 'electron'", "const electronScreen = { getAllDisplays: () => [], getPrimaryDisplay: () => ({}) }")
+    .replace("import { promisify } from 'node:util'", "const { promisify } = __util")
+    .replace(/^export /gm, "");
+  if (/^import /m.test(src)) { ok(false, "executor_linux.js imports changed - update this splice"); }
+  else {
+    const util = await import("node:util");
+    const savedDebug = console.debug; console.debug = () => {};
+    const diag = [];
+    globalThis.__cdbDiag = (m) => diag.push(String(m));
+    globalThis.__cuKwinBridgeBin = "/res/kwin-portal-bridge";
+    try {
+      const mod = new Function("__cp", "__util", src +
+        "\nreturn { notSharedText, startBridgeSession, stopBridgeSession, createRustLinuxBackend };")(cpStub, util);
+      const rust = mod.createRustLinuxBackend();
+      await mod.startBridgeSession();
+      const fails = async (f) => { try { await f(); return "no error"; } catch (e) { return e.message; } };
+
+      failWith = "Error: no portal stream matched screen `DP-2`";
+      let msg = await fails(() => rust.mouseDown());
+      ok(msg === "[kwin-portal-bridge] left-mouse-down failed: Error: Monitor DP-2 is not shared with Claude. " + RESET_HINT,
+         "KDE wording -> monitor id + user instruction", msg);
+      ok(mod.notSharedText(GNOME_NOT_SHARED) === "Monitor HDMI-1 is not shared with Claude (shared: eDP-1 at 0,0 1920x1080). " + RESET_HINT,
+         "GNOME wording is understood too");
+      ok(mod.notSharedText("no portal stream matched the screen") === "no portal stream matched the screen. " + RESET_HINT,
+         "unparseable not-shared text: original + instruction");
+      ok(mod.notSharedText("KWin script timed out") === null, "unrelated text is left alone");
+
+      failCode = 3;
+      failWith = "monitor DP-2 (2560,0 1920x1080) is not shared in the portal session (shared: DP-1 at 0,0 2560x1440)";
+      msg = await fails(() => rust.mouseDown());
+      ok(msg === "[kwin-portal-bridge] left-mouse-down failed: Monitor DP-2 is not shared with Claude (shared: DP-1 at 0,0 2560x1440). " + RESET_HINT,
+         "exit 3, contract text -> rewritten with the shared list", msg);
+      failCode = 3; failWith = "screen is not part of the share";
+      msg = await fails(() => rust.mouseDown());
+      ok(msg.endsWith("screen is not part of the share. " + RESET_HINT), "exit 3, unparseable text -> instruction appended", msg);
+
+      const starts = () => kw.filter(c => c === "session-start").length;
+      ok(starts() === 1, "one session-start so far", kw.join(" "));
+      failWith = "no active portal session";       // forget-session ended the daemon (older bridge text)
+      msg = await fails(() => rust.mouseDown());
+      ok(/the screen-sharing session was ended; retry the action/.test(msg), "the model is told to retry", msg);
+      ok(starts() === 1, "the failed command is not retried behind the model's back", kw.join(" "));
+      msg = await fails(() => rust.mouseDown());
+      ok(msg === "no error" && starts() === 2, "the next command starts one fresh session", kw.join(" "));
+      failCode = 4; failWith = "session daemon not running";   // contract 1: exit code, any text
+      msg = await fails(() => rust.mouseDown());
+      ok(/the screen-sharing session was ended; retry the action/.test(msg), "exit 4 -> same recovery", msg);
+      msg = await fails(() => rust.mouseDown());
+      ok(msg === "no error" && starts() === 3, "and again one fresh session", kw.join(" "));
+      ok(diag.some(l => l.includes("session daemon is gone")), "and the restart is logged");
+      await mod.stopBridgeSession();
     } finally { console.debug = savedDebug; delete globalThis.__cuKwinBridgeBin; }
   }
 }

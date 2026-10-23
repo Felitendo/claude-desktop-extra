@@ -103,9 +103,54 @@ async function _x11BridgeScreens(){
 // (subcommand + --kebab flags, one JSON value on stdout, exit 1 + stderr on
 // error). gnome-portal-bridge proxies through a portal session and can be
 // slower, so we use a more generous timeout there.
+// Bridge CLI contract exit codes (docs/computer-use-bridge-contract.md):
+// 3 = the target monitor is not shared in the live portal session, 4 = no live
+// session (the session daemon is gone). Consumers switch on these; the text
+// matching below is only the fallback for bridges below contract 1.
+var _BRIDGE_EXIT_NOT_SHARED=3,_BRIDGE_EXIT_NO_SESSION=4;
+// Exit status of a failed execFileSync (.status) or execFile (.code; a string
+// such as "ENOENT" when the spawn itself failed).
+function _bridgeExitCode(e){if(!e)return null;if(typeof e.status==="number")return e.status;if(typeof e.code==="number")return e.code;return null}
+// Contract file layout of a bridge with a session: its runtime dir holds
+// session.sock and session.pid. The one place that spells it out. An empty
+// XDG_RUNTIME_DIR counts as unset (/tmp), as in the bridges; a relative one is
+// unusable (XDG spec) and gives null.
+function _bridgeRuntimeDir(){var d=process.env.XDG_RUNTIME_DIR;if(!d)return"/tmp";return _path.isAbsolute(d)?d:null}
+function _bridgeRuntimeFile(bridge,file){var d=_bridgeRuntimeDir();return d===null?null:_path.join(d,bridge,file)}
+// A bridge error about a monitor the user did not share in the portal consent
+// dialog. The bridge text stays generic (older GNOME bridges append a remedy
+// naming their own `forget-session`), but users only have `claude-desktop`, and
+// this text is what the model reads: rewrite it into an instruction for the
+// user. Keeps the monitor id and the shared list; text that does not parse
+// keeps its wording and gets the instruction appended - always on exit 3, and
+// on older bridges when it names the condition. Twin: notSharedText in
+// js/executor_linux.js.
+var _CU_RESET_HINT="Ask the user to run `claude-desktop --reset-screen-sharing`, then share all monitors when the screen-sharing dialog appears.";
+function _cuNotSharedText(msg,isNotShared){
+  var s=String(msg==null?"":msg);
+  var m=s.match(/monitor (\S+) \([^)]*\) is not shared in the portal session \(shared: ([^)]*)\)(?:;[^\n]*?forget-session[^\n]*)?/);
+  if(m)return s.slice(0,m.index)+"Monitor "+m[1]+" is not shared with Claude (shared: "+(m[2].trim()||"none")+"). "+_CU_RESET_HINT+s.slice(m.index+m[0].length);
+  if(isNotShared||/is not shared in the portal session|forget-session/.test(s)){var t=s.replace(/\s+$/,"");return t+(/[.!?]$/.test(t)?" ":". ")+_CU_RESET_HINT}
+  return null;
+}
+// Classify a failed bridge call in place (keeps code/killed/stderr): a monitor
+// that is not shared gets the rewritten text and __cdbNotShared (the capture
+// path surfaces it instead of trying other tiers); exit 4 gets __cdbNoSession
+// (the portal-command paths recover from it).
+function _cuNotSharedError(e){
+  if(!e||typeof e!=="object")return e;
+  var code=_bridgeExitCode(e);
+  var t=_cuNotSharedText(e.message,code===_BRIDGE_EXIT_NOT_SHARED);
+  try{
+    if(t!==null){e.message=t;e.__cdbNotShared=!0}
+    if(code===_BRIDGE_EXIT_NO_SESSION)e.__cdbNoSession=!0;
+  }catch(me){}
+  return e;
+}
 function _bridge(bin,args,timeoutMs){
   if(!bin)throw new Error("bridge binary not available");
-  var res=_cp.execFileSync(bin,args,{encoding:"utf-8",timeout:timeoutMs||15000,maxBuffer:16*1024*1024});
+  var res;
+  try{res=_cp.execFileSync(bin,args,{encoding:"utf-8",timeout:timeoutMs||15000,maxBuffer:16*1024*1024})}catch(e){throw _cuNotSharedError(e)}
   var out=res.trim();
   return out?_parseBridgeJson(bin,out):null;
 }
@@ -115,7 +160,7 @@ function _bridge(bin,args,timeoutMs){
 function _execFileAsync(label,bin,args,timeoutMs){
   return new Promise(function(resolve,reject){
     _cp.execFile(bin,args,{encoding:"utf-8",timeout:timeoutMs||15000,maxBuffer:16*1024*1024},function(err,stdout){
-      if(err){reject(err);return}
+      if(err){reject(_cuNotSharedError(err));return}
       var out=(stdout||"").trim();
       try{resolve(out?_parseBridgeJson(label,out):null)}catch(pe){reject(pe)}
     });
@@ -178,6 +223,51 @@ function _wlBridge(){
 // touch the portal: issue #184 — upstream warms a resumed Code session via
 // listRunningApps → `windows`, and a blanket session ensure here popped the
 // GNOME "Desktop remoto" consent dialog and froze the main process.
+// The session daemon can vanish under a held lock: `claude-desktop
+// --reset-screen-sharing` (the bridge's forget-session) ends it, or it crashed.
+// Older bridges then answer a portal command by opening a one-shot portal
+// session per command (a consent dialog each, now that the grant is gone);
+// contract-1 bridges exit 4. Either way the stale "active" flag has to go and
+// ONE fresh session has to start.
+// Gone = no socket, or a pidfile naming a dead process (a SIGKILLed, OOM-killed
+// or panicked daemon leaves its socket behind). A socket without a pidfile is
+// left alone: bridges before the pidfile never write one. So is a runtime dir
+// that cannot be pinned down: XDG_RUNTIME_DIR relative, or set but empty (the
+// bridges since the CLI contract read that as /tmp, older ones as a relative
+// path) - "no socket" there would restart the session before every command.
+// Contract-1 bridges still report a lost session through exit 4.
+function _gnomeDaemonGone(){
+  try{
+    var d=process.env.XDG_RUNTIME_DIR;
+    if(d!==undefined&&(d===""||!_path.isAbsolute(d)))return !1;
+    var sock=_bridgeRuntimeFile("gnome-portal-bridge","session.sock");
+    if(sock===null)return !1;
+    if(!_fs.existsSync(sock))return !0;
+    var pidFile=_bridgeRuntimeFile("gnome-portal-bridge","session.pid");
+    if(!_fs.existsSync(pidFile))return !1;
+    var pid=parseInt(String(_fs.readFileSync(pidFile,"utf8")).trim(),10);
+    if(!(pid>1))return !1;
+    try{process.kill(pid,0)}catch(ke){return ke&&ke.code==="ESRCH"}
+    return !1;
+  }catch(e){return !1}
+}
+// Clear the flags of a session whose daemon is gone. Not while a start or an
+// end is in flight: those own the flags. Returns whether it cleared anything.
+function _gnomeSessionLost(why){
+  if(!_gnomeSessionActive||_gnomeSessionStarting||_gnomeSessionEnding)return !1;
+  _gnomeSessionActive=!1;_gnomeDaemonMayExist=!1;_wlScreensInvalidate();
+  globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session daemon is gone ("+why+"; screen sharing reset?); starting a new session");
+  return !0;
+}
+// The sync input path cannot wait out a consent dialog (the grant is gone, so
+// one is certain): start the session in the background with its full budget,
+// and tell the model to have the user approve it and retry.
+function _gnomeRestartAfterReset(){
+  try{var p=_gnomeEnsureSession();if(p&&typeof p.catch==="function")p.catch(function(){})}catch(e){}
+  var err=new Error("The screen-sharing session was reset (claude-desktop --reset-screen-sharing). Ask the user to approve the screen-sharing dialog, then retry the action.");
+  err.__cdbSurface=!0;
+  return err;
+}
 var _gnomePortalCmds={"zoom":1,"screenshot":1,"pointer-move":1,"pointer-click":1,"pointer-scroll":1,"pointer-drag":1,"left-mouse-down":1,"left-mouse-up":1,"key-sequence":1,"type":1,"hold-key":1};
 function _wlBridgeCall(args){
   var b=_wlBridge();if(!b)throw new Error("no covered Wayland bridge available");
@@ -185,6 +275,7 @@ function _wlBridgeCall(args){
   // A portal command with no portal session behind it can only fail. Running it
   // anyway costs another full blocking timeout, so refuse while latched down.
   if(portalCmd){
+    if(_gnomeSessionActive&&_gnomeDaemonGone()&&_gnomeSessionLost("no session daemon"))throw _gnomeRestartAfterReset();
     if(!_gnomeSessionActive&&_gnomePortalDown())throw _gnomePortalDownError();
     _gnomeEnsureSessionSync();
     // The backstop may have just discovered the portal is down. Re-check the
@@ -198,7 +289,11 @@ function _wlBridgeCall(args){
   // enumeration gets the standard bridge timeout so a stuck D-Bus call can
   // never block the main process for the full portal budget.
   var t=b.name==="gnome-portal-bridge"&&!portalCmd?15000:b.timeout;
-  return _bridge(b.bin,args,t);
+  try{return _bridge(b.bin,args,t)}
+  catch(e){
+    if(portalCmd&&e&&e.__cdbNoSession&&_gnomeSessionLost("bridge exit 4"))throw _gnomeRestartAfterReset();
+    throw e;
+  }
 }
 // ASYNC twin of _wlBridgeCall, used by the screenshot path (issue #232). Same
 // portal rules, but it AWAITS the async session ensure instead of running the
@@ -207,12 +302,19 @@ async function _wlBridgeCallAsync(args,timeoutOverrideMs){
   var b=_wlBridge();if(!b)throw new Error("no covered Wayland bridge available");
   var portalCmd=b.name==="gnome-portal-bridge"&&_gnomePortalCmds[args[0]]===1;
   if(portalCmd){
+    // This path can await the consent dialog, so a vanished daemon is simply
+    // replaced here (one dialog, full budget) instead of failing the call.
+    if(_gnomeSessionActive&&_gnomeDaemonGone())_gnomeSessionLost("no session daemon");
     if(!_gnomeSessionActive&&_gnomePortalDown())throw _gnomePortalDownError();
     await _gnomeEnsureSession();
     if(!_gnomeSessionActive)throw _gnomePortalDownError();
   }
   var t=timeoutOverrideMs||(b.name==="gnome-portal-bridge"&&!portalCmd?15000:b.timeout);
-  return _execFileAsync(b.name,b.bin,args,t);
+  try{return await _execFileAsync(b.name,b.bin,args,t)}
+  catch(e){
+    if(portalCmd&&e&&e.__cdbNoSession&&_gnomeSessionLost("bridge exit 4"))throw _gnomeRestartAfterReset();
+    throw e;
+  }
 }
 // Synchronous session-start backstop for the per-call input/capture path: these
 // callers run the bridge synchronously and need the portal session up FIRST.
@@ -233,7 +335,9 @@ function _gnomeEnsureSessionSync(){
   if(!_gnomeExitHooked){_gnomeExitHooked=!0;process.once("exit",function(){if(_gnomeSessionActive||_gnomeDaemonMayExist){try{_cp.execFileSync(_gnomeBridgeBin(),["session-end"],{timeout:5000,stdio:"ignore"})}catch(e){}}})}
   _gnomeDaemonMayExist=!0;
   try{_bridge(bin,["session-start"],GNOME_SYNC_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started (sync backstop)");return !0}
-  catch(e){globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session-start failed (sync backstop): "+(e.message||e));_gnomePortalMarkDown("sync backstop session-start failed");return !1}
+  catch(e){
+    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active (sync backstop); using it");return !0}
+    globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session-start failed (sync backstop): "+(e.message||e));_gnomePortalMarkDown("sync backstop session-start failed");return !1}
 }
 // Bridge-side monitor list (snake_case screens) for the active Wayland bridge.
 // Mirrors _x11BridgeScreens; used to map a global-logical region to a monitor
@@ -370,11 +474,18 @@ var _gnomeSessionActive=!1,_gnomeExitHooked=!1,_gnomeSessionStarting=null,_gnome
 // the consent dialog, which only a session-end removes (mirrors
 // bridgeDaemonMayExist in js/executor_linux.js).
 var _gnomeDaemonMayExist=!1;
+// session-start refuses while a daemon is up ("a portal session is already
+// active"): e.g. a start that outlived its sync budget while the user was still
+// answering the dialog. That daemon IS the session we asked for (the KWin twin
+// passes allowAlreadyActive for the same reason).
+function _gnomeAlreadyActive(e){return /already active/i.test(String(e&&(e.message||e)))}
 async function _gnomeSessionStart(){
   var bin=_gnomeBridgeBin();if(!bin)return;
   _gnomeDaemonMayExist=!0;
   try{await _bridgeAsync(bin,["session-start"],GNOME_SESSION_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started")}
-  catch(e){globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session-start failed: "+(e.message||e));_gnomePortalMarkDown("session-start failed")}
+  catch(e){
+    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active; using it");return}
+    globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session-start failed: "+(e.message||e));_gnomePortalMarkDown("session-start failed")}
 }
 // Stop the portal session. Mirrors stopBridgeSession() in js/executor_linux.js,
 // BOTH halves of it: clear the flag synchronously on entry so the last caller
@@ -537,7 +648,14 @@ async function _captureRegion(x,y,w,h,sf,displayIdx){
       if(_wmr&&_wmr.name){_wzargs.push("--display",_wmr.name)}
       var _wzr=await _wlBridgeCallAsync(_wzargs);
       if(_wzr&&_wzr.base64){globalThis.__cdbDiag("[claude-cu] screenshot: captured via "+_wlb.name);return{base64:_wzr.base64,imgW:_wzr.width||w,imgH:_wzr.height||h,mimeType:"image/jpeg"}}
-    }catch(e){globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" zoom failed: "+(e.message||e))}
+    }catch(e){
+      globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" zoom failed: "+(e.message||e));
+      // A monitor the user did not share, or a session that was reset: no
+      // other tier can fix that (the desktopCapturer fallback would raise a
+      // portal dialog of its own), and the model needs the instruction, not
+      // "every tier failed".
+      if(e&&(e.__cdbNotShared||e.__cdbSurface))throw e;
+    }
     // Covered session with a resolved bridge: do NOT fall through to deleted
     // third-party tools. Last resort is the Electron desktopCapturer tier below.
     globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" screenshot failed on a covered Wayland session — no third-party fallback (set COWORK_SCREENSHOT_CMD to override)");
