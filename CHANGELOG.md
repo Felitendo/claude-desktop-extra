@@ -4,7 +4,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-23
 
-### Custom models and the Extra settings page also run on win32
+### Custom models and the Extra settings page also run on win32 (thanks @stratosjl, #295)
 
 - **No change on Linux.** The custom models module and the Extra settings page now load on `win32` as
   well as Linux, so a downstream Windows build of this patch set can carry them without editing them
