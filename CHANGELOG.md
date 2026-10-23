@@ -54,6 +54,8 @@ On top: `zoom` without `--display` (the executor's fallback when it has no monit
 
 `kwin-portal-bridge` (KDE Plasma) had the same restore-token defect: the consent prompt came back for every Computer Use session because the token was never stored. Fixed the same way in our fork and verified on Plasma 6.7.2; the next build picks it up. Keep "Allow restoring on future sessions" on in the KDE prompt.
 
+- **"Stop sharing" in the desktop's screen-sharing indicator ends Computer Use for the task.** Bridges on the updated contract exit 5 for every input and capture command once the user stops sharing, and for a `session-start` whose session is closed before it is ready (`docs/computer-use-bridge-contract.md`). The GNOME and KDE executors then tell the model that the user stopped sharing and to ask before continuing. Until the task's lock ends (for a guided tour: when the tour ends) they start no new session (no consent dialog, no vanished-daemon recovery) and try no other screenshot method; the release still sends `session-end`, and the next task starts sharing again. `claude-desktop --diagnose` prints `stopped_by_user` while it applies. Covered by new cases in `test-cu-gnome-session-lifecycle.mjs` and `test-launcher-diagnose.mjs`.
+
 ### Computer Use on GNOME Wayland: clicks missing on scaled or multi-monitor setups, frozen screenshots (#293)
 
 - **Clicks on fractionally scaled monitors landed short by the scale factor.** The bridge sent logical units where the portal expects stream pixels; points are now converted to stream pixels.

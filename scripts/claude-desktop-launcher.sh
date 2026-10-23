@@ -1858,6 +1858,12 @@ _diag_bridges() {
                 line+=" $k=$v"
             done
             echo "  doctor:$line"
+            # Optional key: the user clicked "Stop sharing" in the desktop's
+            # screen-sharing indicator; the bridge refuses input and capture
+            # until the next session-start.
+            if [[ "$(_bridge_json_field "$doc" stopped_by_user || true)" == true ]]; then
+                echo '  stopped_by_user: screen sharing was stopped by the user; the next Computer Use task starts it again'
+            fi
             session_match="$(_bridge_json_field "$doc" session_match || true)"
             reachable="$(_bridge_json_field "$doc" backend_reachable || true)"
             supported="$(_bridge_json_field "$doc" session_supported || true)"

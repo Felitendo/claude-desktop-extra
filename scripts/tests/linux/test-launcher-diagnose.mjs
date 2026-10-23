@@ -521,6 +521,7 @@ const doctorJson = (name, o) => JSON.stringify({
   session_supported: !!o.supported, restore_token_present: !!o.token,
   restore_token_path: o.supported ? `/s/${name}/restore-token.json` : null,
   daemon_running: !!o.daemon, session_socket: o.supported ? `/r/${name}/session.sock` : null,
+  ...(o.stopped === undefined ? {} : { stopped_by_user: o.stopped }),
   extra_key: { nested: true },
 }, null, 2);
 // A stub bridge: logs "<name> <subcommand>" to calls, answers from o.
@@ -547,9 +548,9 @@ safe("D9", () => {
       screens: '[{"id":"X","name":"X","geometry":{"x":0,"y":0,"width":1,"height":1}}]' }, calls),
     "wlroots-bridge": contractStub("wlroots-bridge", { backend: "wlroots" }, calls),
     "gnome-portal-bridge": contractStub("gnome-portal-bridge", { backend: "gnome-portal", match: true, supported: true,
-      token: true, daemon: true, screens: PRETTY_SCREENS,
+      token: true, daemon: true, stopped: true, screens: PRETTY_SCREENS,
       forget: '{\n  "ok": true,\n  "ended": true,\n  "daemon": "shutdown-requested",\n  "token_removed": true,\n  "token_path": "/s/g"\n}' }, calls),
-    "kwin-portal-bridge": contractStub("kwin-portal-bridge", { backend: "kwin-portal", supported: true,
+    "kwin-portal-bridge": contractStub("kwin-portal-bridge", { backend: "kwin-portal", supported: true, stopped: false,
       forget: '{\n  "ok": true,\n  "ended": false,\n  "daemon": "none",\n  "token_removed": false,\n  "token_path": "/s/k"\n}' }, calls),
     "foo-bridge": contractStub("foo-bridge", { backend: "foo", supported: true, token: true,
       forget: '{"ok":true,"ended":false,"daemon":"none","token_removed":true,"token_path":"/s/f"}' }, calls),
@@ -578,6 +579,12 @@ safe("D9", () => {
     d.includes("  doctor: contract=1 backend=gnome-portal session_match=true backend_reachable=true backend_error=null " +
       "session_supported=true restore_token_present=true restore_token_path=/s/gnome-portal-bridge/restore-token.json " +
       "daemon_running=true session_socket=/r/gnome-portal-bridge/session.sock"), true);
+  // Optional doctor key stopped_by_user: one line where it is true, none where
+  // it is false (kwin) or absent (the others).
+  const STOPPED_LINE = "  stopped_by_user: screen sharing was stopped by the user; the next Computer Use task starts it again";
+  const section = (n) => { const i = d.indexOf(`[${n}] `); const j = d.indexOf("\n[", i + 1); return i < 0 ? "" : d.slice(i, j < 0 ? d.length : j); };
+  check("diagnose: stopped_by_user true -> the stop is named", section("gnome-portal-bridge").includes(STOPPED_LINE), true);
+  check("diagnose: stopped_by_user false or absent -> no line", d.split(STOPPED_LINE).length - 1, 1);
   const screensBy = called().filter((l) => l.endsWith(" screens")).map((l) => l.split(" ")[0]).sort().join(",");
   check("diagnose: screens only where session_match and the backend is reachable", screensBy, "gnome-portal-bridge");
   check("diagnose: an unreachable backend prints its reason instead",

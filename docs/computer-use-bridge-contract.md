@@ -10,6 +10,7 @@ claude-desktop-extra bundles one or more Computer Use bridge binaries next to th
 - Contract-specific exit codes for bridges with a portal session:
   - **3**: the target monitor is not shared in the live portal session. stderr: `monitor <ID> (<x>,<y> <w>x<h>) is not shared in the portal session (shared: <ID> at <x>,<y> <w>x<h>[, ...])`. A shared entry may be named `stream-<node>` when the bridge cannot map a stream to a monitor. The bridge adds no remedy text; consumers add their own.
   - **4**: no live session (the session daemon is gone).
+  - **5**: screen sharing was stopped (the portal session was closed from the desktop's screen-sharing indicator, or by the desktop). The bridge records this in `${XDG_RUNTIME_DIR:-/tmp}/<bridge>/stopped-by-user`; while that marker exists, input and capture commands (and any command that would otherwise need a portal session, such as `screens` without Mutter) exit 5 and never open a portal session of their own. stderr: `screen sharing was stopped (the portal session was closed by the user or the desktop)`. Exit 5 also covers the desktop ending the session itself, e.g. when a shared monitor is unplugged. A `session-start` whose new daemon is closed before it becomes ready also exits 5. `session-start`, `session-end` and `forget-session` remove the marker.
   Consumers switch on the exit code; text matching is only a fallback for bridges below contract 1.
 - `--version` prints `<bridge> <semver>`.
 - Every coordinate flag (`--x`, `--y`, `--from-x`, `--from-y`, `--to-x`, `--to-y`, region origins) accepts negative values.
@@ -39,6 +40,8 @@ Exits 0 even when the display server, compositor or session bus is unreachable. 
 | `restore_token_path` | string or null | path of the grant file (null when unsupported) |
 | `daemon_running` | bool | a session daemon answers on its socket |
 | `session_socket` | string or null | socket path (null when unsupported) |
+
+Optional key: `stopped_by_user` (bool) - the stopped-by-user marker exists.
 
 ### `screens`, `windows`
 

@@ -61,6 +61,12 @@ let exitHookInstalled = false
 // session-start that failed or timed out can still leave a daemon waiting on
 // its consent dialog, which only a session-end removes.
 let bridgeDaemonMayExist = false
+// The user stopped screen sharing (bridge exit 5) during the current CU lock.
+// Every later bridge action in that lock fails fast with
+// STOPPED_BY_USER_MESSAGE and no session is started again; cleared when the
+// lock is released (after its session-end, which removes the bridge's
+// stopped-by-user marker) or a new lock starts.
+let stoppedByUser = false
 const legacyDisplayIdToElectronDisplayId = new Map()
 
 const SYNTHETIC_INSTALLED_APPS = [
@@ -155,10 +161,28 @@ function rememberDisplayIdMappings(displays) {
 
 // Bridge CLI contract exit codes (docs/computer-use-bridge-contract.md):
 // 3 = the target monitor is not shared in the live portal session, 4 = no live
-// session (the session daemon is gone). Consumers switch on these; the text
-// matching is only the fallback for bridges below contract 1.
+// session (the session daemon is gone), 5 = the user stopped screen sharing
+// (the portal session was closed from the desktop's screen-sharing indicator).
+// Consumers switch on these; the text matching is only the fallback for
+// bridges below contract 1.
 const BRIDGE_EXIT_NOT_SHARED = 3
 const BRIDGE_EXIT_NO_SESSION = 4
+const BRIDGE_EXIT_STOPPED_BY_USER = 5
+
+// What the model reads after the user stopped screen sharing. Twin:
+// _CU_STOPPED_BY_USER_MSG in js/cu_linux_executor.js.
+// It cannot promise more than "the next session": upstream keeps the CU lock
+// across turns while a guided tour (teach mode) runs, so the latch holds until
+// the tour ends or the user clicks Stop in Claude. Teach mode ending is NOT a
+// clear signal here: a stop during a tour fails the step, which itself ends
+// teach mode, and restarting there would re-share the screen behind the user.
+export const STOPPED_BY_USER_MESSAGE = "Screen sharing was stopped from the desktop (its screen-sharing indicator, or the desktop ended the session). Stop using Computer Use and ask the user whether to continue; do not retry. Computer Use resumes with the next Computer Use session - in a guided tour, after the tour ends or the user clicks Stop in Claude."
+
+function stoppedByUserError() {
+  const error = new Error(STOPPED_BY_USER_MESSAGE)
+  error.__cdbStoppedByUser = true
+  return error
+}
 
 // A bridge error about a monitor the user did not share in the portal consent
 // dialog. Contract-1 bridges exit 3 with "monitor <ID> (<geometry>) is not
@@ -225,10 +249,29 @@ async function execBridge(command, args, opts = {}) {
     // session; this one is not retried (no consent dialog behind the model's
     // back for a command it already got an answer to).
     const exitCode = typeof error?.code === 'number' ? error.code : null
+    // The user stopped screen sharing: the daemon is gone on purpose. Latch it
+    // for this lock (ensureBridgeSession then fails fast and never starts a
+    // new session) and keep sessionReadyPromise, so the lock release still
+    // sends session-end, which clears the bridge's stopped-by-user marker.
+    // session-start counts too: it exits 5 when the new daemon was closed
+    // before it became ready (bridgeDaemonMayExist keeps the release's
+    // session-end even though ensureBridgeSession drops the failed start).
+    if (
+      command !== 'session-end'
+      && (exitCode === BRIDGE_EXIT_STOPPED_BY_USER || /screen sharing was stopped|stopped by the user/.test(detail))
+    ) {
+      if (bridgeSessionActive && !sessionStopPromise && !stoppedByUser) {
+        stoppedByUser = true
+        bridgeDaemonMayExist = true
+        globalThis.__cdbDiag(`[linux-executor] screen sharing was stopped (${command}); no new session until this Computer Use lock ends`)
+      }
+      throw stoppedByUserError()
+    }
     if (
       KWIN_PORTAL_COMMANDS.has(command)
       && (exitCode === BRIDGE_EXIT_NO_SESSION || /no active portal session/.test(detail))
       && bridgeSessionActive
+      && !stoppedByUser
       && sessionReadyPromise
       && !sessionStopPromise
     ) {
@@ -262,6 +305,9 @@ async function execBridgeJson(command, args, opts) {
 async function ensureBridgeSession() {
   if (!bridgeSessionActive) {
     throw new Error('[kwin-portal-bridge] bridge session is not active; cuLock is not held')
+  }
+  if (stoppedByUser) {
+    throw stoppedByUserError()
   }
   if (!sessionReadyPromise) {
     debugLog('starting bridge session')
@@ -299,6 +345,12 @@ function installExitHook() {
 async function startBridgeSession() {
   installExitHook()
   bridgeSessionActive = true
+  // A new lock is a new task: a stop from the previous one no longer applies
+  // (this session-start removes the bridge's stopped-by-user marker).
+  if (stoppedByUser) {
+    stoppedByUser = false
+    globalThis.__cdbDiag('[linux-executor] stopped-by-user latch cleared (new lock)')
+  }
   if (sessionStopPromise) {
     await sessionStopPromise
   }
@@ -316,6 +368,7 @@ async function stopBridgeSession() {
   // can exist.
   if (!sessionReadyPromise && !bridgeDaemonMayExist) {
     debugLog('stopBridgeSession skipped; no active session promise')
+    stoppedByUser = false
     return
   }
 
@@ -339,6 +392,11 @@ async function stopBridgeSession() {
     throw error
   }).finally(() => {
     sessionStopPromise = null
+    // The lock that saw the user stop sharing is over.
+    if (stoppedByUser && !bridgeSessionActive) {
+      stoppedByUser = false
+      globalThis.__cdbDiag('[linux-executor] stopped-by-user latch cleared (lock released)')
+    }
   })
 
   return sessionStopPromise
