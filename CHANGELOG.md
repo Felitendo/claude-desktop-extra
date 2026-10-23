@@ -15,6 +15,14 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   path as before. A leading `~\` in `apiKeyFile` is expanded on Windows. Covered by new win32 cases in
   `test-custom-models-main.mjs` and a Windows scenario in `test-extra-settings-dom.mjs`.
 
+### Custom models: the CLI preload also hooks `claude.exe` (thanks @stratosjl)
+
+- **No change on Linux.** `js/custom_models_preload.js` hooks `fetch` only inside the Claude Code binary,
+  recognised by `process.execPath`'s name. The Windows app starts Claude Code as `claude.exe`, so on
+  win32 the preload returned before hooking: every custom-model request went to Anthropic, which answered
+  "Model 'claude-<id>' not found". A trailing `.exe` is now ignored in that check. Covered by new cases in
+  `test-custom-models-preload.mjs` (`claude` and `claude.exe` hook, other Bun programs do not).
+
 ### Claude Desktop v3.6556.2
 
 - **Rebased on the official v3.6556.2 `.deb` (bundled Electron 44.9.3).** Three patches were re-fitted to
