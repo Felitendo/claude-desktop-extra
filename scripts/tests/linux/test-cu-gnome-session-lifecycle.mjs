@@ -21,6 +21,10 @@
 // flag write plus a published stop promise that starts await - since it was
 // written; this file is the GNOME side catching up. Run headless: the bridge is a
 // stub, no portal and no GNOME needed.
+//
+// Cases 8-12 cover the default display: with no display selected, a screenshot
+// targets the monitor `screens` marks is_shared (the portal session streams only
+// what the user shared in the consent dialog), queried after session-start.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -31,9 +35,12 @@ const EXECUTOR = path.join(ROOT, "js", "cu_linux_executor.js");
 
 // session-start takes CONSENT_MS (the XDG RemoteDesktop dialog); everything else is instant.
 // reply(sub, args) may return a string (stdout) or throw (the subprocess failed);
-// subcommands it does not handle answer "{}".
-function makeRig(consentMs, reply) {
-  const log = [];
+// subcommands it does not handle answer "{}". displays (optional) are the
+// Electron displays; displays[displays.primaryIdx || 0] is Electron's primary.
+// delays (optional, mutable) maps a subcommand to its reply delay in ms;
+// reply.onCall(sub, args), when set, computes stdout at CALL time instead.
+function makeRig(consentMs, reply, displays, delays) {
+  const log = [], argv = [];
   const cp = {
     execFileSync(bin, args) {
       const base = path.basename(String(bin));
@@ -47,18 +54,21 @@ function makeRig(consentMs, reply) {
       const base = path.basename(String(bin));
       const sub = (args || [])[0];
       log.push("CALL " + sub);
-      const delay = sub === "session-start" ? consentMs : 0;
+      argv.push((args || []).join(" "));
+      const delay = sub === "session-start" ? consentMs : ((delays && delays[sub]) || 0);
+      const early = reply && reply.onCall ? reply.onCall(sub, args) : undefined;
       setTimeout(() => {
         log.push("DONE " + sub);
         let out = "{}";
-        if (reply) { try { out = reply(sub, args) ?? "{}"; } catch (e) { cb(e, "", String(e.message)); return; } }
+        if (early !== undefined) out = early;
+        else if (reply) { try { out = reply(sub, args) ?? "{}"; } catch (e) { cb(e, "", String(e.message)); return; } }
         cb(null, out, "");
       }, delay);
     },
     spawn() { return { on() {}, unref() {} }; }
   };
   const electron = {
-    screen: { getAllDisplays: () => [], getPrimaryDisplay: () => ({ id: 1, bounds: {x:0,y:0,width:1,height:1}, workArea:{x:0,y:0,width:1,height:1}, scaleFactor:1, label:"e" }), getCursorScreenPoint: () => ({x:0,y:0}) },
+    screen: { getAllDisplays: () => displays || [], getPrimaryDisplay: () => (displays && displays[displays.primaryIdx || 0]) || ({ id: 1, bounds: {x:0,y:0,width:1,height:1}, workArea:{x:0,y:0,width:1,height:1}, scaleFactor:1, label:"e" }), getCursorScreenPoint: () => ({x:0,y:0}) },
     desktopCapturer: { getSources: async () => [] },
     clipboard: { readText: () => "", writeText: () => {} },
     nativeImage: {}
@@ -83,7 +93,7 @@ function makeRig(consentMs, reply) {
   new Function("require", "process", src)(requireStub, process);
   const ex = globalThis.__linuxExecutor;
   log.length = 0;
-  return { ex, log, restore(){ delete globalThis.__linuxExecutor; } };
+  return { ex, log, argv, cp, restore(){ delete globalThis.__linuxExecutor; } };
 }
 
 
@@ -240,6 +250,315 @@ console.log("\n[7] a failed `screens` enumeration is retried after the cooldown 
   } finally {
     Date.now = realNow;
     rig.restore();
+  }
+}
+
+// ── Default display = the monitor shared in the portal dialog (#293) ──────────
+// The screenshot handler (js/cu_handler_injection.js), staged the way sub-patch 6
+// of fix_computer_use_linux.nim stages it, run against the real executor above.
+const INJECTION = path.join(ROOT, "js", "cu_handler_injection.js");
+function buildHandler() {
+  let src = readFileSync(INJECTION, "utf8").trim();
+  for (const [ph, v] of [["__SELF__", "__self"], ["__MAKE_DISPATCH__", "__dispatch"], ["__STATE__", "__state"],
+                         ["__TOOL_NAME__", "__tool"], ["__INPUT__", "__input"], ["__SESSION__", "__session"]]) {
+    src = src.split(ph).join(v);
+  }
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const fn = new AsyncFunction("process", "require", "__self", "__dispatch", "__state", "__tool", "__input", "__session", src);
+  return (tool, input) => fn({ platform: "linux", env: process.env }, () => ({}), {}, null, {}, tool, input || {}, {});
+}
+const handler = buildHandler();
+// Electron: built-in panel is the primary (index 0), external monitor right of it (index 1).
+const EDISPLAYS = [
+  { id: 1, label: "Built-in", size: { width: 1920, height: 1080 }, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 },
+  { id: 2, label: "External", size: { width: 2560, height: 1440 }, bounds: { x: 1920, y: 0, width: 2560, height: 1440 }, scaleFactor: 1 }
+];
+const scr = (name, x, w, h, primary, shared) => {
+  const o = { id: name, name, geometry: { x, y: 0, width: w, height: h }, scale: 1, is_primary: primary, is_active: true };
+  if (shared !== undefined) o.is_shared = shared;
+  return o;
+};
+// screens answers WITHOUT is_shared until session-start has finished (no daemon
+// yet), then with the given share flags - the bridge contract.
+function shareRig(sharedFlags, displays) {
+  let daemon = false, screensCalls = 0;
+  const rig = makeRig(20, (sub) => {
+    if (sub === "session-start") { daemon = true; return "{}"; }
+    if (sub === "screens") {
+      screensCalls++;
+      return JSON.stringify([scr("eDP-1", 0, 1920, 1080, true, daemon ? sharedFlags[0] : undefined),
+                             scr("HDMI-1", 1920, 2560, 1440, false, daemon ? sharedFlags[1] : undefined)]);
+    }
+    if (sub === "zoom") return JSON.stringify({ base64: "QUJD", width: 10, height: 10 });
+    return "{}";
+  }, displays || EDISPLAYS);
+  globalThis.__cuPinnedDisplay = undefined; globalThis.__cuLastShot = null; globalThis.__cuActiveOrigin = undefined;
+  rig.screensCalls = () => screensCalls;
+  return rig;
+}
+const zoomArgs = (rig) => rig.argv.filter(a => a.startsWith("zoom "));
+
+console.log("\n[8] no display selected: the monitor shared in the portal dialog is the default (#293)");
+{
+  const rig = shareRig([false, true]);
+  // A zoom BEFORE the lock caches a list without is_shared (no daemon yet).
+  await rig.ex.zoom({ x: 10, y: 10, w: 10, h: 10 }, 1, null);
+  ok(rig.screensCalls() === 1, "a pre-session screens list is fetched and cached", String(rig.screensCalls()));
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  const r = await handler("screenshot", {});
+  ok(r && r.content && r.content[0] && r.content[0].type === "image", "the screenshot returns an image", JSON.stringify(r).slice(0, 120));
+  ok(rig.screensCalls() === 2, "session-start refreshed the cached screens list", String(rig.screensCalls()));
+  const seq = calls(rig.log);
+  ok(seq.lastIndexOf("CALL screens") > seq.indexOf("DONE session-start"),
+     "screens is re-queried after the session daemon is up", seq.join(" "));
+  const z = zoomArgs(rig);
+  ok(/--display HDMI-1$/.test(z[z.length - 1] || ""), "the capture targets the shared monitor, not Electron's primary", z[z.length - 1]);
+  ok(globalThis.__cuLastShot && globalThis.__cuLastShot.originX === 1920,
+     "click coordinates map onto the shared monitor's origin", JSON.stringify(globalThis.__cuLastShot));
+  ok(rig.log.some(l => l.includes("default display: shared monitor HDMI-1") && l.includes("Electron display 1")),
+     "the choice is logged through __cdbDiag");
+  await handler("screenshot", { display_number: 0 });
+  const z0 = zoomArgs(rig);
+  ok(/--display eDP-1$/.test(z0[z0.length - 1] || "") && globalThis.__cuLastShot.originX === 0,
+     "an explicit display_number 0 beats the shared default", z0[z0.length - 1]);
+  rig.restore();
+}
+
+console.log("\n[9] display_number 0 is a real selection, not \"unset\"");
+{
+  // Electron's primary is display 1 here, so `display_number||...||primary`
+  // would have turned an explicit 0 into 1.
+  const primaryExternal = [...EDISPLAYS]; primaryExternal.primaryIdx = 1;
+  const rig = shareRig([undefined, undefined], primaryExternal);
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await handler("screenshot", { display_number: 0 });
+  ok(globalThis.__cuLastShot.originX === 0, "display_number 0 captures display 0, not Electron's primary",
+     JSON.stringify(globalThis.__cuLastShot));
+  await handler("screenshot", {});
+  ok(globalThis.__cuLastShot.originX === 1920, "with no display_number the primary (display 1) is used");
+  rig.restore();
+}
+
+console.log("\n[10] no is_shared (bridge without the field) keeps Electron's primary");
+{
+  const rig = shareRig([undefined, undefined]);
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await handler("screenshot", {});
+  const z = zoomArgs(rig);
+  ok(/--display eDP-1$/.test(z[z.length - 1] || "") && globalThis.__cuLastShot.originX === 0,
+     "falls back to Electron's primary", z[z.length - 1]);
+  ok(!rig.log.some(l => l.includes("default display:")), "and logs no default-display choice");
+  rig.restore();
+}
+
+console.log("\n[11] several shared: the Mutter primary among them wins");
+{
+  // Electron and Mutter disagree: Electron's primary is the external monitor.
+  const swapped = [EDISPLAYS[1], EDISPLAYS[0]];
+  const rig = shareRig([true, true], swapped);
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await handler("screenshot", {});
+  ok(globalThis.__cuLastShot.originX === 0, "the shared Mutter primary (eDP-1) is used, not Electron's primary",
+     JSON.stringify(globalThis.__cuLastShot));
+  rig.restore();
+}
+
+console.log("\n[12] a shared monitor with no matching Electron display falls back, loudly");
+{
+  const rig = shareRig([false, true], [EDISPLAYS[0], { ...EDISPLAYS[1], bounds: { x: 3840, y: 0, width: 2560, height: 1440 } }]);
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await handler("screenshot", {});
+  ok(globalThis.__cuLastShot.originX === 0, "Electron's primary is used");
+  ok(rig.log.some(l => l.includes("[claude-cu] default display: shared monitor HDMI-1 at 1920,0 matches no Electron display")),
+     "and the mismatch is logged through __cdbDiag");
+  rig.restore();
+}
+
+const screensJson = (flags) => JSON.stringify([scr("eDP-1", 0, 1920, 1080, true, flags[0]), scr("HDMI-1", 1920, 2560, 1440, false, flags[1])]);
+const ZOOM_OK = JSON.stringify({ base64: "QUJD", width: 10, height: 10 });
+const resetShot = () => { globalThis.__cuPinnedDisplay = undefined; globalThis.__cuLastShot = null; globalThis.__cuActiveOrigin = undefined; };
+const countCalls = (rig, sub) => rig.log.filter(l => l === "CALL " + sub).length;
+
+console.log("\n[13] a stale in-flight screens reply landing after a session start is not cached");
+{
+  // The first fetch starts before session-start and still carries the share flags
+  // of an earlier daemon; it resolves only after the new session invalidated the cache.
+  let share = [true, false];
+  const delays = { screens: 100 };
+  const reply = (sub) => sub === "zoom" ? ZOOM_OK : "{}";
+  reply.onCall = (sub) => {
+    if (sub === "session-start") { share = [false, true]; return "{}"; }
+    if (sub === "screens") return screensJson(share);
+    return undefined;
+  };
+  const rig = makeRig(20, reply, EDISPLAYS, delays);
+  resetShot();
+  const z = rig.ex.zoom({ x: 10, y: 10, w: 10, h: 10 }, 1, null);   // screens in flight (100 ms)
+  await sleep(10);
+  rig.ex.__setLockHeld(true);                                      // session-start at ~30 ms
+  await z; await sleep(50);
+  delays.screens = 0;
+  await handler("screenshot", {});
+  ok(countCalls(rig, "screens") === 2, "the screenshot re-queries screens instead of using the stale reply", String(countCalls(rig, "screens")));
+  ok(globalThis.__cuLastShot && globalThis.__cuLastShot.originX === 1920, "and targets the monitor shared in THIS session",
+     JSON.stringify(globalThis.__cuLastShot));
+  rig.restore();
+}
+
+console.log("\n[14] a list without is_shared during an active session is not cached");
+{
+  // The daemon missed the bridge's budget once: the first post-start list has no is_shared.
+  let daemon = false, misses = 1;
+  const rig = makeRig(20, (sub) => {
+    if (sub === "session-start") { daemon = true; return "{}"; }
+    if (sub === "screens") {
+      if (daemon && misses > 0) { misses--; return screensJson([undefined, undefined]); }
+      return screensJson(daemon ? [false, true] : [undefined, undefined]);
+    }
+    if (sub === "zoom") return ZOOM_OK;
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  const realNow = Date.now;
+  try {
+    rig.ex.__setLockHeld(true);
+    await sleep(60);
+    await handler("screenshot", {});
+    ok(globalThis.__cuLastShot.originX === 0 && countCalls(rig, "screens") === 1,
+       "the provisional list falls back to Electron's primary, one screens call", String(countCalls(rig, "screens")));
+    ok(rig.log.some(l => l.includes("carries no is_shared during a portal session")), "and the miss is logged");
+    Date.now = () => realNow() + 2500;            // past SCREENS_SHARE_RETRY_MS
+    await handler("screenshot", {});
+    ok(countCalls(rig, "screens") === 2 && globalThis.__cuLastShot.originX === 1920,
+       "the next lookup re-queries and picks the shared monitor", String(countCalls(rig, "screens")));
+    await handler("screenshot", {});
+    ok(countCalls(rig, "screens") === 2, "the list with is_shared is cached", String(countCalls(rig, "screens")));
+  } finally { Date.now = realNow; rig.restore(); }
+}
+
+console.log("\n[15] a screens failure in an earlier session does not block the next session");
+{
+  let daemon = false, screensCalls = 0;
+  const rig = makeRig(20, (sub) => {
+    if (sub === "session-start") { daemon = true; return "{}"; }
+    if (sub === "session-end") { daemon = false; return "{}"; }
+    if (sub === "screens") { screensCalls++; if (screensCalls === 1) throw new Error("Command failed: screens"); return screensJson(daemon ? [false, true] : [undefined, undefined]); }
+    if (sub === "zoom") return ZOOM_OK;
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await handler("screenshot", {});
+  ok(screensCalls === 1 && globalThis.__cuLastShot.originX === 0, "session 1: screens failed, primary used", String(screensCalls));
+  await rig.ex.__setLockHeld(false);
+  await sleep(60);
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await handler("screenshot", {});
+  ok(screensCalls === 2 && globalThis.__cuLastShot.originX === 1920,
+     "session 2 re-enumerates at once (no 30 s wait) and picks the shared monitor", String(screensCalls));
+  rig.restore();
+}
+
+console.log("\n[16] a latched-down portal: the default-display lookup spawns no session-start");
+{
+  const rig = makeRig(20, (sub) => {
+    if (sub === "session-start") throw new Error("portal refused");
+    if (sub === "screens") return screensJson([undefined, undefined]);
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  ok(countCalls(rig, "session-start") === 1, "the lock's session-start ran once and failed");
+  await handler("screenshot", {});
+  ok(countCalls(rig, "session-start") === 1, "the screenshot did not retry session-start", String(countCalls(rig, "session-start")));
+  rig.restore();
+}
+
+console.log("\n[17] COWORK_SCREENSHOT_CMD: a screenshot outside a lock does not open the portal");
+{
+  const rig = makeRig(20, (sub) => sub === "screens" ? screensJson([false, true]) : "{}", EDISPLAYS);
+  rig.cp.execSync = () => "";                     // the user's capture command succeeds
+  resetShot();
+  process.env.COWORK_SCREENSHOT_CMD = "true {FILE}";
+  try {
+    const r = await handler("screenshot", {});
+    ok(r && r.content && r.content[0] && r.content[0].type === "image", "the screenshot is served by the command");
+    ok(countCalls(rig, "session-start") === 0, "no session-start (no consent dialog)", rig.log.filter(l => l.startsWith("CALL")).join(" ") || "(none)");
+  } finally { delete process.env.COWORK_SCREENSHOT_CMD; rig.restore(); }
+}
+
+console.log("\n[18] a session-start that FAILED while the lock is held is still ended on release");
+{
+  // The bridge's ready timeout leaves its daemon waiting on the consent dialog
+  // by design; only a session-end removes it. Before: the release saw neither
+  // an active session nor a start in flight and returned without one.
+  const rig = makeRig(20, (sub) => { if (sub === "session-start") throw new Error("timed out waiting for the portal"); return "{}"; });
+  rig.ex.__setLockHeld(true);
+  await sleep(60);
+  await rig.ex.__setLockHeld(false);
+  await sleep(40);
+  ok(countCalls(rig, "session-end") === 1, "session-end is sent after the failed start", calls(rig.log).join(" "));
+  await rig.ex.__setLockHeld(false);
+  await sleep(40);
+  ok(countCalls(rig, "session-end") === 1, "and only once: a successful end clears the daemon flag", String(countCalls(rig, "session-end")));
+  rig.restore();
+}
+{
+  const rig = makeRig(20);
+  await rig.ex.__setLockHeld(false);
+  await sleep(30);
+  ok(countCalls(rig, "session-end") === 0, "a release with no start ever spawned still sends nothing");
+  rig.restore();
+}
+
+console.log("\n[19] KWin twin (js/executor_linux.js): same failed-start release");
+{
+  // Load the ES module with its three imports swapped for stubs.
+  const kw = [];
+  // execFile is used through util.promisify, which resolves with the callback's
+  // first value: hand it the {stdout, stderr} object the real one's custom
+  // promisify returns.
+  const cpStub = {
+    execFile(bin, args, opts, cb) {
+      if (typeof opts === "function") { cb = opts; }
+      const sub = (args || [])[0];
+      kw.push(sub);
+      setTimeout(() => sub === "session-start" ? cb(Object.assign(new Error("timed out waiting for the portal"), { stderr: "" }), "", "") : cb(null, { stdout: "{}", stderr: "" }), 5);
+    },
+    spawnSync() { return { status: 0 }; }
+  };
+  let src = readFileSync(path.join(ROOT, "js", "executor_linux.js"), "utf8")
+    .replace("import { execFile as execFileCb, spawnSync } from 'node:child_process'", "const { execFile: execFileCb, spawnSync } = __cp")
+    .replace("import { screen as electronScreen } from 'electron'", "const electronScreen = { getAllDisplays: () => [], getPrimaryDisplay: () => ({}) }")
+    .replace("import { promisify } from 'node:util'", "const { promisify } = __util")
+    .replace(/^export /gm, "");
+  if (/^import /m.test(src)) { ok(false, "executor_linux.js imports changed - update this splice"); }
+  else {
+    const util = await import("node:util");
+    const savedDebug = console.debug; console.debug = () => {};
+    globalThis.__cdbDiag = () => {};
+    globalThis.__cuKwinBridgeBin = "/res/kwin-portal-bridge";
+    try {
+      const mod = new Function("__cp", "__util", src + "\nreturn { createLinuxExecutor };")(cpStub, util);
+      const noop = new Proxy({}, { get: () => async () => null });
+      const ex = mod.createLinuxExecutor({ backend: noop });
+      try { await ex.__setLockHeld(true); } catch {}
+      await sleep(20);
+      await ex.__setLockHeld(false).catch(() => {});
+      await sleep(20);
+      ok(kw.filter(c => c === "session-end").length === 1, "session-end is sent after the failed start", kw.join(" "));
+      await ex.__setLockHeld(false).catch(() => {});
+      await sleep(20);
+      ok(kw.filter(c => c === "session-end").length === 1, "and only once", kw.join(" "));
+    } finally { console.debug = savedDebug; delete globalThis.__cuKwinBridgeBin; }
   }
 }
 

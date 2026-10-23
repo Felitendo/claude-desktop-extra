@@ -46,6 +46,27 @@ On top: `zoom` without `--display` (the executor's fallback when it has no monit
 
 `kwin-portal-bridge` (KDE Plasma) had the same restore-token defect: the consent prompt came back for every Computer Use session because the token was never stored. Fixed the same way in our fork and verified on Plasma 6.7.2; the next build picks it up. Keep "Allow restoring on future sessions" on in the KDE prompt.
 
+### Computer Use on GNOME Wayland: clicks missing on scaled or multi-monitor setups, frozen screenshots (#293)
+
+- **Clicks on fractionally scaled monitors landed short by the scale factor.** The bridge sent logical units where the portal expects stream pixels; points are now converted to stream pixels.
+- **The outer band of a scaled monitor was unreachable.** xdg-desktop-portal refused those positions; they are now reached with a clamped absolute motion plus a relative motion for the remainder.
+- **Screenshots could be up to about a minute old.** The bridge returned the oldest queued frame; it now returns the latest.
+- **A monitor not shared in the consent dialog is an error, not a silent switch to another monitor.** The error names the shared monitors. The new `gnome-portal-bridge forget-session` clears the remembered selection so the dialog can be answered again with all monitors.
+- **The executor defaults screenshots to the shared monitor** and honours an explicit display 0 instead of reading it as unset.
+- **Session start waits up to about two minutes** for the consent dialog.
+- **A screenshot right after a click now includes the app's repaint.** Mutter skips a frame requested too early and its follow-up redraw does not reach a second monitor, so the shot could show the screen from before the click; after pointer input the bridge now flushes the pending frame with a 1 px pointer nudge.
+- **An input request whose caller already timed out is refused instead of executed late**, so a click can no longer land after Claude gave up on it.
+- **Ending a session is bounded to about 4 s**, even when the session daemon is stuck.
+
+Operator note: with several monitors, select all of them in the consent dialog.
+
+### Computer Use on X11 HiDPI, sway/Hyprland/river multi-monitor and rotated outputs, KDE session robustness
+
+- **X11 with a scale factor** (`Xft.dpi` via XSETTINGS, `GDK_SCALE`, `--force-device-scale-factor`): clicks were sent in Electron DIP while XTest works in root pixels, so at 1.5 a click at the screen centre landed at two thirds of the way. Clicks and the screenshot crop now share one DIP-to-pixel mapping (the same as Electron's `dipToScreenPoint`), including mixed scales, a primary monitor not at 0,0, displays whose DIP bounds overlap by one column, and XWayland via `CLAUDE_USE_XWAYLAND=1`.
+- **wlroots-bridge (sway, Hyprland, river):** absolute pointer motion is now relative to the layout's bounding box, so monitors left of or above the origin are reachable and clicks land exactly. Rotated and flipped outputs (all 8 transforms) give upright screenshots and correct click mapping.
+- **KDE Wayland (`kwin-portal-bridge`):** every bridge call has a timeout. Session start waits up to about two minutes for the consent dialog and tells a declined dialog from a slow one. A stuck session daemon is ended (SIGTERM, then SIGKILL) on session end and at quit. Input whose caller already timed out is refused instead of executed late, and screenshots settle after an action.
+- **GNOME and KDE:** a session daemon left over from a failed session start is now ended as well.
+
 ## 2026-10-22
 
 ### "Update available" follows this project's releases

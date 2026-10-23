@@ -6,6 +6,48 @@ const execFile = promisify(execFileCb)
 
 const DEFAULT_HOST_BUNDLE_ID = 'com.anthropic.claude'
 
+// execFile budgets for kwin-portal-bridge. Each sits above the bridge's own
+// bound for that command, so a stuck daemon surfaces as the bridge's error
+// (which names its daemon.log) and the kill here is only the backstop; the
+// values match the GNOME executor (js/cu_linux_executor.js).
+//   session-start  bridge waits up to 120 s for the consent dialog
+//   portal         daemon-proxied commands; bridge client budget 25 s
+//   local          KWin D-Bus / desktop-file commands, no portal involved
+//   session-end    bridge reaps a silent daemon within ~4 s
+// type and hold-key take time by design and get it on top (the bridge adds
+// the same: per character its delay plus TYPE_PER_CHAR_ALLOWANCE_MS).
+// teach-step and teach-wait-event block until the user acts in the overlay,
+// so they have no timeout.
+const KWIN_SESSION_START_MS = 125000
+const KWIN_PORTAL_MS = 30000
+const KWIN_LOCAL_MS = 15000
+const KWIN_SESSION_END_MS = 15000
+const KWIN_EXIT_SESSION_END_MS = 5000
+const KWIN_TYPE_DEFAULT_DELAY_MS = 12
+const TYPE_PER_CHAR_ALLOWANCE_MS = 5
+const KWIN_PORTAL_COMMANDS = new Set([
+  'pointer-move', 'pointer-click', 'pointer-scroll', 'pointer-drag',
+  'left-mouse-down', 'left-mouse-up', 'key-sequence', 'type', 'hold-key',
+  'read-clipboard', 'write-clipboard', 'screenshot', 'zoom',
+  'set-overlay-display',
+])
+const KWIN_UNBOUNDED_COMMANDS = new Set(['teach-step', 'teach-wait-event'])
+
+function bridgeTimeoutMs(command) {
+  if (command === 'session-start') return KWIN_SESSION_START_MS
+  if (command === 'session-end') return KWIN_SESSION_END_MS
+  if (KWIN_UNBOUNDED_COMMANDS.has(command)) return 0
+  if (KWIN_PORTAL_COMMANDS.has(command)) return KWIN_PORTAL_MS
+  return KWIN_LOCAL_MS
+}
+
+function typeTimeoutMs(text, delayMs) {
+  const delay = typeof delayMs === 'number' && Number.isFinite(delayMs)
+    ? Math.max(0, Math.round(delayMs))
+    : KWIN_TYPE_DEFAULT_DELAY_MS
+  return KWIN_PORTAL_MS + [...String(text)].length * (delay + TYPE_PER_CHAR_ALLOWANCE_MS)
+}
+
 const LINUX_CU_CAPABILITIES = {
   screenshotFiltering: 'native',
   platform: 'linux',
@@ -15,6 +57,10 @@ let sessionReadyPromise = null
 let sessionStopPromise = null
 let bridgeSessionActive = false
 let exitHookInstalled = false
+// True from the first session-start until a session-end succeeds: a
+// session-start that failed or timed out can still leave a daemon waiting on
+// its consent dialog, which only a session-end removes.
+let bridgeDaemonMayExist = false
 const legacyDisplayIdToElectronDisplayId = new Map()
 
 const SYNTHETIC_INSTALLED_APPS = [
@@ -109,12 +155,14 @@ function rememberDisplayIdMappings(displays) {
 
 async function execBridge(command, args, opts = {}) {
   const spec = buildBridgeCommand(command, args)
-  debugLog(`exec ${command}`, { args: spec.args })
+  const timeout = opts.timeoutMs ?? bridgeTimeoutMs(command)
+  debugLog(`exec ${command}`, { args: spec.args, timeout })
   try {
     const { stdout } = await execFile(spec.command, spec.args, {
       encoding: 'utf8',
       windowsHide: true,
       maxBuffer: 16 * 1024 * 1024,
+      timeout,
     })
     debugLog(`exec ${command} ok`, {
       stdoutLength: stdout.trim().length,
@@ -123,7 +171,10 @@ async function execBridge(command, args, opts = {}) {
   } catch (error) {
     const stderr = typeof error?.stderr === 'string' ? error.stderr.trim() : ''
     const stdout = typeof error?.stdout === 'string' ? error.stdout.trim() : ''
-    const detail = stderr || stdout || error?.message || String(error)
+    const timedOut = timeout > 0 && error?.killed === true && !!error?.signal
+    const detail = timedOut
+      ? `no reply within ${timeout} ms (killed with ${error.signal})${stderr ? `: ${stderr}` : ''}`
+      : stderr || stdout || error?.message || String(error)
 
     if (opts.allowAlreadyActive && /already active/i.test(detail)) {
       debugLog(`exec ${command} already active`, { detail })
@@ -163,6 +214,7 @@ async function ensureBridgeSession() {
   if (!sessionReadyPromise) {
     debugLog('starting bridge session')
     sessionReadyPromise = (async () => {
+      bridgeDaemonMayExist = true
       await execBridge('session-start', [], { allowAlreadyActive: true })
     })().catch(error => {
       sessionReadyPromise = null
@@ -177,13 +229,16 @@ function installExitHook() {
   if (exitHookInstalled) return
   exitHookInstalled = true
   process.once('exit', () => {
-    if (!bridgeSessionActive && !sessionReadyPromise) return
+    if (!bridgeSessionActive && !sessionReadyPromise && !bridgeDaemonMayExist) return
     const shutdownSpec = buildBridgeCommand('session-end', [])
     try {
       debugLog('stopping bridge session on process exit', shutdownSpec)
+      // Bounded: this blocks app quit. The bridge itself reaps a silent
+      // daemon (SIGTERM, then SIGKILL) well inside this budget.
       spawnSync(shutdownSpec.command, shutdownSpec.args, {
         stdio: 'ignore',
         windowsHide: true,
+        timeout: KWIN_EXIT_SESSION_END_MS,
       })
     } catch {}
   })
@@ -203,7 +258,11 @@ async function stopBridgeSession() {
   if (sessionStopPromise) {
     return sessionStopPromise
   }
-  if (!sessionReadyPromise) {
+  // No start in flight. A start that FAILED cleared sessionReadyPromise but
+  // may still have left a daemon waiting on its consent dialog (the bridge's
+  // ready timeout leaves it waiting by design), so only skip when no daemon
+  // can exist.
+  if (!sessionReadyPromise && !bridgeDaemonMayExist) {
     debugLog('stopBridgeSession skipped; no active session promise')
     return
   }
@@ -212,15 +271,17 @@ async function stopBridgeSession() {
   sessionReadyPromise = null
   sessionStopPromise = (async () => {
     try {
-      await readyPromise
+      if (readyPromise) await readyPromise
     } catch (error) {
+      // Still end it: a session-start that timed out leaves the daemon
+      // waiting on its consent dialog. session-end is idempotent.
       debugLog('stopBridgeSession after failed startup', {
         detail: error instanceof Error ? error.message : String(error),
       })
-      return
     }
     debugLog('stopping bridge session')
     await execBridge('session-end', [])
+    bridgeDaemonMayExist = false
   })().catch(error => {
     globalThis.__cdbDiag('[linux-executor] bridge session shutdown failed', error)
     throw error
@@ -686,7 +747,9 @@ export function createRustLinuxBackend() {
         '--duration-ms',
         String(durationMs),
       ]
-      await execBridgeJson('hold-key', args)
+      await execBridgeJson('hold-key', args, {
+        timeoutMs: KWIN_PORTAL_MS + Math.max(0, Number(durationMs) || 0),
+      })
     },
 
     async type(text, opts) {
@@ -696,7 +759,9 @@ export function createRustLinuxBackend() {
         return
       }
       await ensureBridgeSession()
-      await execBridgeJson('type', ['--text', text])
+      await execBridgeJson('type', ['--text', text], {
+        timeoutMs: typeTimeoutMs(text),
+      })
     },
 
     async typePaced(text, delayMs) {
@@ -706,7 +771,9 @@ export function createRustLinuxBackend() {
       if (typeof delayMs === 'number' && Number.isFinite(delayMs)) {
         args.push('--delay-ms', String(Math.max(0, Math.round(delayMs))))
       }
-      await execBridgeJson('type', args)
+      await execBridgeJson('type', args, {
+        timeoutMs: typeTimeoutMs(text, delayMs),
+      })
     },
 
     async readClipboard() {
