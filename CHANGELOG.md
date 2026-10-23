@@ -33,6 +33,8 @@ Three defects in `gnome-portal-bridge` (github.com/patrickjaja/gnome-bridge), pr
 
 On top: `zoom` without `--display` (the executor's fallback when it has no monitor list) now takes global coordinates and clamps the region to the display instead of refusing it on a monitor not at the origin, and the executor no longer caches a failed `screens` enumeration for the whole process (it retries after 30 s), so one slow reply cannot pin every later capture to global coordinates. The GNOME lifecycle harness covers the retry. Operator notes: in the consent dialog keep "Remember This Selection" on and turn on "Allow Remote Interaction"; `gnome-portal-bridge doctor` reports `restore_token_present`.
 
+`kwin-portal-bridge` (KDE Plasma) had the same restore-token defect: the consent prompt came back for every Computer Use session because the token was never stored. Fixed the same way in our fork and verified on Plasma 6.7.2; the next build picks it up. Keep "Allow restoring on future sessions" on in the KDE prompt.
+
 ## 2026-10-22
 
 ### "Update available" follows this project's releases
