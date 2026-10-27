@@ -18,7 +18,7 @@ Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P inference - is An
 
 | Distro | Command |
 |--------|---------|
-| Arch / Manjaro | `yay -S claude-desktop-extra` ([AUR](https://aur.archlinux.org/packages/claude-desktop-extra); no AUR helper: [signed pacman repo](#arch-linux--manjaro-pacman-repository)) |
+| Arch / Manjaro ([Omarchy](https://omarchy.org), CachyOS, EndeavourOS and other Arch-based distros) | `yay -S claude-desktop-extra` ([AUR](https://aur.archlinux.org/packages/claude-desktop-extra); no AUR helper: [signed pacman repo](#arch-linux--manjaro-pacman-repository)) |
 | Debian / Ubuntu | `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh \| sudo bash && sudo apt install claude-desktop-extra` |
 | Fedora / RHEL | `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh \| sudo bash && sudo dnf install claude-desktop-extra` |
 | NixOS / Nix | `nix run github:patrickjaja/claude-desktop-extra` |
@@ -29,7 +29,7 @@ x86_64 and aarch64 are supported everywhere except Nix (x86_64 only). **Cowork**
 <a name="arch-linux--manjaro-pacman-repository"></a>
 <a id="install-pacman"></a>
 <details>
-<summary><b>Arch Linux / Manjaro (AUR or pacman repository)</b></summary>
+<summary><b>Arch Linux / Manjaro / Omarchy and other Arch-based distros (AUR or pacman repository)</b></summary>
 
 ```bash
 yay -S claude-desktop-extra              # or: paru -S claude-desktop-extra / Manjaro: pamac build claude-desktop-extra

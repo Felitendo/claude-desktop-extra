@@ -2,6 +2,12 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-27
+
+### Docs
+
+- **README: Omarchy and other Arch-based distros** are named in the Arch install row; they use the same AUR package and pacman repo.
+
 ## 2026-10-26
 
 ### Computer Use: the screen-sharing session ends with the task (#293)
