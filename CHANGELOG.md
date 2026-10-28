@@ -2,6 +2,17 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-28
+
+### Upstream v4.29.0
+
+- **Cowork finds QEMU again on RHEL 9, Rocky, Alma and NixOS.** v4.29.0 only accepts `/usr/bin/qemu-system-<arch>` and no longer searches `$PATH`, so Cowork said "requires QEMU" where QEMU lives elsewhere (RHEL's `qemu-kvm` through our shim, the Nix store, `/usr/local/bin`). `fix_cowork_firmware_paths_linux` now tries `CLAUDE_QEMU_PATH`, then `/usr/bin`, then `$PATH`; the Nix package sets `CLAUDE_QEMU_PATH`, and `--diagnose` reports the same order.
+- **The third-party setup window is patched again.** v4.29.0 ships it as `resources/ion-dist.asar` instead of a directory; the build now extracts, patches and repacks it, and a missing or unexpected layout fails the build instead of skipping both ion-dist patches.
+- **Hung window: upstream now reloads by itself.** v4.29.0 expires the watchdog's tokens and re-checks 30 s after a kill attempt, so a renderer death after an attempt no longer leaves the window blank until quit; our hand-off of that death to the reload path (`fix_renderer_clean_exit_reload` sub-patch C) is retired. The SIGKILL fallback stays: on Linux the kill attempt asks the renderer to crash itself, which does nothing when the whole renderer process is stalled. The clean-exit reload (#287) and the log line for suppressed deaths (`fix_renderer_gone_suppressed_log`) stay too; upstream still drops both silently.
+- **Re-fitted to v4.29.0:** Computer Use lock acquire (`fix_computer_use_linux`), the remaining renderer sub-patches, and transcript limits (`add_feature_transcript_limits`, which now also covers Cowork VM transcript copies through the same reader).
+- **Extra -> Deployment** lists the new managed keys `inferenceTokenWarningPercent` and `userFileUploadsEnabled`.
+- **Audited:** feature flags (635 -> 672), platform gates (no new macOS/Windows-only feature that Linux lacks), built-in MCP servers, and the deployment-key, custom-models, quick-open and panel-tabs anchors. Locale files and `claude-browser-shim.js` moved into `app.asar` upstream; nothing of ours reads them.
+
 ## 2026-10-27
 
 ### Computer Use on a background display - Experimental (#300)
