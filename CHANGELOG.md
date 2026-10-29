@@ -2,6 +2,12 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-29
+
+### The "Calm the Cowork glow" switch is gone
+
+- **claude.ai no longer has the glow it calmed.** Cowork now lives in the Claude tab, and the pulsing hero glow went with the old Cowork home: `.cowork-hero-glow` and its `cowork-hero-glow-pulse` keyframes are in none of claude.ai's current stylesheets, so the switch matched nothing and changed nothing. `add_feature_cowork_glow` and its Community Features row are removed; a leftover `coworkGlow` / `coworkGlowOpacity` key in `claude-desktop-extra.json(c)` is ignored.
+
 ## 2026-10-28
 
 ### Upstream v4.29.0
